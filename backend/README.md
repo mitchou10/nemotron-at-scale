@@ -208,13 +208,18 @@ est téléchargé une fois dans le volume `asr_models` ; les images sont constru
 Dockerfile officiel de NVIDIA (`NEMO_SPEECH_REF` pour épingler une version). Les instances ASR
 ne sont pas publiées sur l'hôte : seul le backend y accède.
 
-**Vosk** ([vosk.py](app/services/vosk.py)) : service `asr-vosk` (image `alphacep/kaldi-en`, ~6 Go, le
-modèle est dedans ; `VOSK_IMAGE` choisit la langue, ex. `alphacep/kaldi-fr`). Dans `ASR_URL`, une
-instance Vosk s'écrit `vosk://asr-vosk:2700` (limite par instance avec `#N`, comme pour Nemo) ; la
-santé est testée par une poignée de main WebSocket (Vosk n'a pas de route `/ready`). Le message
-`end` envoie `eof` : Vosk renvoie le résultat final et ferme la connexion, la gateway se reconnecte
-au prochain audio. Vosk découpe les phrases lui-même : après chaque phrase finalisée, le tampon de
-reprise est réduit à ~500 ms. Précision inférieure à Nemotron, mais bien moins gourmand.
+**Vosk** : service séparé et indépendant du backend, dans [vosk_service/](../vosk_service/README.md).
+Il expose les mêmes routes que `nemo-speech serve` (`/health`, `/ready`, `/v1/models`,
+`POST /v1/audio/transcriptions`, WebSocket `/v1/audio/transcriptions/realtime`, page de démonstration
+sur `/`, `/metrics`) ; la gateway l'utilise donc comme une instance Nemo, avec une simple URL
+`ws://asr-vosk:8080/v1/audio/transcriptions/realtime` dans `ASR_URL`. Profil compose `vosk`,
+modèle et langue choisis par `VOSK_MODEL_NAME` (français léger par défaut), plusieurs instances avec
+`--scale asr-vosk=N`. Le modèle est téléchargé au premier démarrage dans le volume `vosk_models`.
+Vosk n'a pas de modèle multilingue : une instance par langue. Précision inférieure à Nemotron, mais
+bien moins gourmand.
+
+Le client `vosk://` du backend ([vosk.py](app/services/vosk.py)) reste disponible pour un serveur
+`vosk-server` brut (protocole natif d'alphacep) ; avec `vosk_service` il n'est plus nécessaire.
 
 **Combien de flux par instance, et avec quel retard ?** Cela dépend de la machine : le script
 [scripts/bench_asr.py](scripts/bench_asr.py) le mesure. Il envoie N flux simultanés en temps réel (un

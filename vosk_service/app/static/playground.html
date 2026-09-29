@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vosk_service</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { margin-bottom: 0; }
+  #status { color: #555; margin-top: .25rem; }
+  section { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+  button, select { font: inherit; padding: .35rem .8rem; }
+  pre, #live { background: #f4f4f4; border-radius: 6px; padding: .75rem; min-height: 3rem;
+    white-space: pre-wrap; word-break: break-word; }
+  #live .partial { color: #888; }
+  .error { color: #b00020; }
+  nav a { margin-right: 1rem; }
+</style>
+</head>
+<body>
+<h1>vosk_service</h1>
+<div id="status">chargement…</div>
+<nav><a href="/docs">API (Swagger)</a><a href="/metrics">Métriques</a><a href="/v1/models">Modèles</a></nav>
+
+<section>
+  <h2>Fichier WAV</h2>
+  <p>WAV PCM16 ou float32, 8 à 96 kHz.</p>
+  <input type="file" id="file" accept=".wav,audio/wav">
+  <select id="format">
+    <option>json</option><option>verbose_json</option><option>text</option>
+    <option>srt</option><option>vtt</option>
+  </select>
+  <button id="send">Transcrire</button>
+  <pre id="fileOut"></pre>
+</section>
+
+<section>
+  <h2>Microphone (temps réel)</h2>
+  <p>Route WebSocket <code>/v1/audio/transcriptions/realtime</code>.</p>
+  <button id="start">Démarrer</button>
+  <button id="stop" disabled>Arrêter</button>
+  <div id="live"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const apiKey = new URLSearchParams(location.search).get('api_key');
+const authHeaders = apiKey ? { Authorization: 'Bearer ' + apiKey } : {};
+
+fetch('/ready').then((r) => r.json()).then((j) => {
+  $('status').textContent = j.ready
+    ? `Modèle ${j.model} (${j.language}) — ${j.active_streams}/${j.max_streams} flux`
+    : 'Le modèle est en cours de chargement…';
+});
+
+$('send').onclick = async () => {
+  const file = $('file').files[0];
+  if (!file) { $('fileOut').textContent = 'Choisis un fichier WAV.'; return; }
+  const form = new FormData();
+  form.append('file', file);
+  form.append('response_format', $('format').value);
+  $('fileOut').textContent = 'transcription…';
+  const response = await fetch('/v1/audio/transcriptions', { method: 'POST', body: form, headers: authHeaders });
+  $('fileOut').textContent = await response.text();
+};
+
+let ws, context, media, processor, stopping = false, finals = [], partial = '';
+const render = () => {
+  const live = $('live');
+  live.replaceChildren(document.createTextNode(finals.join('\n') + (finals.length ? '\n' : '')));
+  const span = document.createElement('span');
+  span.className = 'partial';
+  span.textContent = partial;
+  live.appendChild(span);
+};
+const fail = (message) => {
+  const div = document.createElement('div');
+  div.className = 'error';
+  div.textContent = message;
+  $('live').appendChild(div);
+};
+const reset = () => {
+  if (media) media.getTracks().forEach((t) => t.stop());
+  if (processor) processor.disconnect();
+  if (context) context.close();
+  $('start').disabled = false;
+  $('stop').disabled = true;
+};
+
+$('start').onclick = async () => {
+  finals = []; partial = ''; stopping = false; render();
+  try {
+    media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
+  } catch (error) { fail(String(error)); return; }
+  context = new AudioContext();
+  const source = context.createMediaStreamSource(media);
+  processor = context.createScriptProcessor(4096, 1, 1);
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const key = apiKey ? '?api_key=' + encodeURIComponent(apiKey) : '';
+  ws = new WebSocket(`${scheme}://${location.host}/v1/audio/transcriptions/realtime${key}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'session.update', session: { sample_rate: context.sampleRate } }));
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type.endsWith('.delta')) partial += message.delta;
+    else if (message.type.endsWith('.completed')) { finals.push(message.transcript); partial = ''; }
+    else if (message.type === 'input_audio_buffer.committed') ws.close();
+    else if (message.type === 'error') fail(message.error.message);
+    render();
+  };
+  ws.onclose = reset;
+  processor.onaudioprocess = (event) => {
+    if (ws.readyState !== 1 || stopping) return;
+    const samples = event.inputBuffer.getChannelData(0);
+    const pcm = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767)));
+    ws.send(pcm.buffer);
+  };
+  source.connect(processor);
+  processor.connect(context.destination);
+  $('start').disabled = true;
+  $('stop').disabled = false;
+};
+
+$('stop').onclick = () => {
+  stopping = true;
+  $('stop').disabled = true;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+  else reset();
+};
+</script>
+</body>
+</html>
