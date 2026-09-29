@@ -1,11 +1,12 @@
 """FastAPI application factory."""
-from contextlib import asynccontextmanager
+
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health_router, users_router
+from app.api.routes import audio_router, health_router
 from app.config import settings
 
 
@@ -48,7 +49,7 @@ def create_app() -> FastAPI:
     # Routers
     api_prefix = "/api/v1"
     app.include_router(health_router, prefix=api_prefix)
-    app.include_router(users_router, prefix=api_prefix)
+    app.include_router(audio_router, prefix=api_prefix)
 
     return app
 

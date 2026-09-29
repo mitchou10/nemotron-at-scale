@@ -1,4 +1,5 @@
 """Application configuration using pydantic-settings."""
+
 from functools import lru_cache
 from typing import Literal
 
@@ -25,9 +26,7 @@ class Settings(BaseSettings):
     APP_LOG_LEVEL: str = "info"
 
     # Database (async driver: asyncpg)
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://nemotron:nemotron@db:5432/nemotron"
-    )
+    DATABASE_URL: str = "postgresql+asyncpg://nemotron:nemotron@db:5432/nemotron"
     DATABASE_URL_TEST: str = (
         "postgresql+asyncpg://nemotron:nemotron@db:5432/nemotron_test"
     )

@@ -25,28 +25,16 @@ backend/
 │   │   └── routes/
 │   │       ├── __init__.py
 │   │       ├── health.py  # /health, /health/ready
-│   │       └── users.py   # CRUD users
-│   ├── core/
-│   │   ├── __init__.py
-│   │   └── security.py     # Hash/verify password (PBKDF2)
-│   ├── crud/
-│   │   ├── __init__.py
-│   │   └── user.py         # Opérations DB async
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── user.py         # ORM User (AsyncAttrs)
-│   └── schemas/
-│       ├── __init__.py
-│       └── user.py         # Pydantic schemas
+│   │       └── audio.py   # WebSocket /ws/audio/{client_id}
 ├── alembic/
 │   ├── env.py             # Config async
 │   ├── script.py.mako
 │   └── versions/
-│       └── 0001_create_users.py
+│       └── .gitkeep
 ├── tests/
 │   ├── conftest.py        # Fixtures async (DB, client)
 │   ├── test_health.py
-│   └── test_users.py
+│   └── test_audio_ws.py
 ├── .env.example
 ├── .gitignore
 ├── alembic.ini
@@ -119,8 +107,4 @@ alembic downgrade -1
 |---------|--------------------------|----------------------|
 | GET     | `/api/v1/health`         | Liveness probe       |
 | GET     | `/api/v1/health/ready`   | Readiness probe      |
-| GET     | `/api/v1/users/`         | Liste des users     |
-| POST    | `/api/v1/users/`         | Créer un user        |
-| GET     | `/api/v1/users/{id}`     | Détail d'un user     |
-| PATCH   | `/api/v1/users/{id}`     | Modifier un user    |
-| DELETE  | `/api/v1/users/{id}`     | Supprimer un user    |
+| WS      | `/api/v1/ws/audio/{client_id}` | Flux audio (bytes), id unique par client |
