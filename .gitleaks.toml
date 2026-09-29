@@ -1,0 +1,21 @@
+title = "nemotron-at-scale gitleaks config"
+
+# `targetRules` on a global allowlist needs v8.25.0; CI pins 8.30.1.
+minVersion = "v8.25.0"
+
+[extend]
+useDefault = true
+
+# Exceptions go here, allowlisted by rule + path + line content rather than by commit: a git-mode
+# fingerprint is `<commit>:<file>:<rule>:<line>`, so it dies with every rebase, amend or squash, and
+# a broken entry then fails CI on every open pull request. Example (all three criteria must hold):
+#
+# [[allowlists]]
+# targetRules = ["generic-api-key"]
+# description = "Throwaway password of the local docker-compose database, used nowhere else."
+# condition = "AND"
+# paths = ['''^docker-compose\.yml$''']
+# regexTarget = "line"
+# regexes = ['''^\s*POSTGRES_PASSWORD:''']
+#
+# No exception is needed today: the full history scans clean.

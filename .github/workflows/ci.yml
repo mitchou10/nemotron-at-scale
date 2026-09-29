@@ -1,0 +1,294 @@
+name: CI
+
+# Pull request checks: commit messages, lint, tests, secret scan, config scan, and a build + vulnerability
+# scan of every image that changed. Nothing here depends on another repository.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    branches:
+      - "**"
+  workflow_dispatch:
+
+# Only the newest push to a pull request is worth building.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  path-filter:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      vosk_service: ${{ steps.filter.outputs.vosk_service }}
+      ci: ${{ steps.filter.outputs.ci }}
+      services: ${{ steps.services.outputs.services }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check updated files paths
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            vosk_service:
+              - 'vosk_service/**'
+            ci:
+              - '.github/workflows/**'
+              - '.github/releases/**'
+
+      - name: Select images to build
+        id: services
+        env:
+          BACKEND: ${{ steps.filter.outputs.backend }}
+          VOSK_SERVICE: ${{ steps.filter.outputs.vosk_service }}
+          CI: ${{ steps.filter.outputs.ci }}
+        run: |
+          set -euo pipefail
+
+          SERVICES='[]'
+          add() { SERVICES=$(jq -c --argjson s "$1" '. + [$s]' <<<"$SERVICES"); }
+
+          if [ "$BACKEND" = "true" ] || [ "$CI" = "true" ]; then
+            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","target":"runtime"}'
+          fi
+          if [ "$VOSK_SERVICE" = "true" ] || [ "$CI" = "true" ]; then
+            add '{"name":"vosk-service","context":"vosk_service","dockerfile":"vosk_service/Dockerfile","target":"runtime"}'
+          fi
+
+          echo "Images to build: $SERVICES"
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+
+  lint-commits:
+    name: Lint commit messages
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft && github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install commitlint
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/commitlint"
+          cd "$RUNNER_TEMP/commitlint"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund @commitlint/cli@19.8.1 @commitlint/config-conventional@19.8.1
+
+      - name: Lint the pull request commits (Conventional Commits)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/commitlint/commitlint.config.mjs" <<'EOF'
+          export default {
+            extends: ['@commitlint/config-conventional'],
+            rules: {
+              'type-enum': [2, 'always', ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert']],
+              'header-max-length': [2, 'always', 100],
+              // Long lines in a commit body are fine (lists, URLs, command lines).
+              'body-max-line-length': [0],
+              'footer-max-line-length': [0],
+            },
+          };
+          EOF
+          "$RUNNER_TEMP/commitlint/node_modules/.bin/commitlint" \
+            --config "$RUNNER_TEMP/commitlint/commitlint.config.mjs" \
+            --cwd "$GITHUB_WORKSPACE" \
+            --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  lint:
+    uses: ./.github/workflows/lint.yml
+    needs:
+      - path-filter
+    if: ${{ needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.vosk_service == 'true' || needs.path-filter.outputs.ci == 'true' }}
+    permissions:
+      contents: read
+
+  unit-tests:
+    uses: ./.github/workflows/unit-tests.yml
+    needs:
+      - path-filter
+    if: ${{ needs.path-filter.outputs.backend == 'true' || needs.path-filter.outputs.vosk_service == 'true' || needs.path-filter.outputs.ci == 'true' }}
+    permissions:
+      contents: read
+
+  scan-gitleaks:
+    name: Scan for leaked secrets
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" "$base/$archive"
+          curl -sSfL -o "$RUNNER_TEMP/checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          (cd "$RUNNER_TEMP" && sha256sum --check --ignore-missing checksums.txt)
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan the git history
+        id: gitleaks
+        run: |
+          set +e
+          "$RUNNER_TEMP/gitleaks" git . \
+            --config .gitleaks.toml --redact --no-banner \
+            --report-format sarif --report-path gitleaks.sarif
+          echo "exit-code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the report to the Security tab
+        if: ${{ always() && hashFiles('gitleaks.sarif') != '' }}
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Fail if secrets were found
+        if: ${{ steps.gitleaks.outputs.exit-code != '0' }}
+        run: |
+          echo "::error::gitleaks found leaked secrets (exit code ${{ steps.gitleaks.outputs.exit-code }}). See the Security tab or run 'make gitleaks' locally."
+          exit 1
+
+  scan-trivy-conf:
+    name: Scan configuration (Trivy)
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Scan Dockerfiles, compose and workflows
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
+          exit-code: "1"
+
+      - name: Upload the report to the Security tab
+        if: ${{ always() && hashFiles('trivy-config.sarif') != '' }}
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+  build-docker:
+    name: Build and scan ${{ matrix.service.name }}
+    runs-on: ubuntu-latest
+    needs:
+      - path-filter
+    if: ${{ needs.path-filter.outputs.services != '[]' }}
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.path-filter.outputs.services) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The image stays local: pull request builds are not pushed, so there is nothing to clean up.
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          target: ${{ matrix.service.target }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: local/${{ matrix.service.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.service.name }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.service.name }}
+
+      # Report only: findings in the base image should not block every pull request.
+      - name: Scan the image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: local/${{ matrix.service.name }}:ci
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Upload the report to the Security tab
+        if: ${{ always() && hashFiles('trivy-image.sarif') != '' }}
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ matrix.service.name }}
+
+  # Workaround for required status checks in branch protection: mark only this job as required.
+  # https://github.com/orgs/community/discussions/13690
+  all-jobs-passed:
+    name: Check jobs status
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    permissions: {}
+    # Every job of this workflow must be listed here, or a failure in a missing one leaves the
+    # gate green and the branch mergeable.
+    needs:
+      - path-filter
+      - lint-commits
+      - lint
+      - unit-tests
+      - scan-gitleaks
+      - scan-trivy-conf
+      - build-docker
+    steps:
+      - name: Check status of all required jobs
+        run: |-
+          NEEDS_CONTEXT='${{ toJson(needs) }}'
+          JOB_IDS=$(echo "$NEEDS_CONTEXT" | jq -r 'keys[]')
+          for JOB_ID in $JOB_IDS; do
+            RESULT=$(echo "$NEEDS_CONTEXT" | jq -r ".[\"$JOB_ID\"].result")
+            echo "$JOB_ID job result: $RESULT"
+            if [[ $RESULT != "success" && $RESULT != "skipped" ]]; then
+              echo "***"
+              echo "Error: The $JOB_ID job did not pass."
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped."

@@ -1,0 +1,8 @@
+# Trivy findings accepted as noise rather than fixed. Add an entry only with the reason: a bare ID
+# hides a real problem the day it starts to matter. Nothing to ignore for now.
+#
+# misconfigurations:
+#   - id: DS-0026     # example: "No HEALTHCHECK defined"
+#     paths: ["backend/Dockerfile.dev"]
+#     statement: dev-only image, never deployed
+misconfigurations: []

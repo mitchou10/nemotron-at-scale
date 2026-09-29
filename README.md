@@ -81,16 +81,18 @@ Le serveur répond en JSON : `{"type": "partial", "text": "..."}` au fil de la p
 import asyncio, json, wave
 from websockets.asyncio.client import connect
 
+
 async def main() -> None:
-    audio = wave.open("audio.wav").readframes(10**9)   # WAV 16 kHz mono 16 bits
+    audio = wave.open("audio.wav").readframes(10**9)  # WAV 16 kHz mono 16 bits
     async with connect("ws://localhost:8000/api/v1/ws/audio/moi") as ws:
-        for i in range(0, len(audio), 3200):            # 100 ms par trame
+        for i in range(0, len(audio), 3200):  # 100 ms par trame
             await ws.send(audio[i : i + 3200])
             await asyncio.sleep(0.1)
         await ws.send("end")
         while (message := json.loads(await ws.recv()))["type"] != "final":
             print(message["text"])
         print("final :", message["text"])
+
 
 asyncio.run(main())
 ```
@@ -148,6 +150,49 @@ uv run --extra dev ruff check . && uv run --extra dev ruff format --check .
 
 Les tests n'ont besoin ni de Docker, ni de Postgres, ni de modèle : les serveurs ASR sont simulés.
 Un test optionnel utilise un vrai modèle Vosk (`VOSK_TEST_MODEL_DIR`, voir `vosk_service/README.md`).
+
+Raccourcis (`make help`) : `make install-hooks` (hooks git), `make check` (tous les hooks sur tous les
+fichiers), `make lint`, `make test`, `make gitleaks` (recherche de secrets dans tout l'historique).
+
+## CI/CD et releases
+
+Tout est dans ce dépôt (`.github/`), sans dépendre d'un autre dépôt de workflows.
+
+| Workflow | Déclencheur | Rôle |
+|---|---|---|
+| `ci.yml` | pull request | messages de commit (Conventional Commits), ruff, tests, recherche de secrets (gitleaks), scan de configuration (Trivy), build de chaque image modifiée + scan de vulnérabilités ; le job **Check jobs status** regroupe tout |
+| `lint.yml`, `unit-tests.yml` | appelés par `ci.yml` | ruff et pytest sur `backend/` et `vosk_service/` |
+| `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR quand une release est créée |
+
+**Flux de release** (release-please) : les commits suivent les
+[Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `perf:`, `refactor:`,
+`docs:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` ; `!` ou `BREAKING CHANGE:` pour une rupture). À chaque
+push sur `main`, release-please ouvre ou met à jour une pull request **« chore(main): release X.Y.Z »**.
+La fusionner crée le tag et la release GitHub, met à jour `CHANGELOG.md` et la version des deux
+`pyproject.toml`, puis publie les images :
+
+```
+ghcr.io/mitchou10/nemotron-at-scale-backend:<version>        (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale-vosk-service:<version>   (+ :latest)
+```
+
+Configuration : `.github/releases/` (versions de départ dans les manifestes, sections du changelog).
+Contrôles locaux avant de pousser : `make install-hooks` installe ruff, gitleaks et la vérification des
+commits ; `.gitleaks.toml` et `.trivyignore.yaml` portent les exceptions (avec leur raison).
+
+**Réglages GitHub à faire une fois** (Settings) :
+
+- *Actions > General* : cocher « Read and write permissions » et **« Allow GitHub Actions to create and
+  approve pull requests »**, sinon release-please ne peut pas ouvrir sa pull request ;
+- *Branches* : protéger `main` et exiger le check **Check jobs status** ;
+- *Packages* : rendre les images publiques si besoin (elles naissent privées).
+
+**Pré-releases (optionnel, désactivé)** : sur le modèle de Muffin, une branche `dev` peut publier des
+release candidates (`X.Y.Z-rc.N`). Pour l'activer : créer la branche `dev` et définir la variable de dépôt
+`ENABLE_PRERELEASE=true` (Settings > Secrets and variables > Actions > Variables). Non exercé pour l'instant.
+
+Sans GitHub App, la pull request de release ne relance pas la CI sur son propre commit : ajoute les
+secrets `APP_CLIENT_ID` et `APP_PRIVATE_KEY` pour que ce soit le cas.
 
 ## Limites connues
 
