@@ -177,6 +177,7 @@ même façon et peut les mélanger. Nemo :
   | `asr_instance_failures_total` | compteur | flux coupés par la chute de l'instance |
   | `asr_failovers_total` | compteur | flux repris sur cette instance après une panne ailleurs |
   | `asr_streams_rejected_total{reason}` | compteur | flux refusés (`busy`, `unavailable`) |
+  | `asr_chunk_latency_seconds` | histogramme | Vosk : retard de la réponse à chaque chunk audio (au-delà de ~0,1 s, l'instance est en retard) |
   | `asr_buffer_bytes` | gauge | octets audio gardés en mémoire pour la reprise, par instance qui sert les flux |
   | `asr_buffer_limit_bytes` | gauge | plafond du tampon par flux (`ASR_BUFFER_SECONDS` × 32 000) |
   | `process_resident_memory_bytes` (et `process_*`) | gauge | mémoire réelle du process backend (Linux) |
@@ -215,32 +216,75 @@ santé est testée par une poignée de main WebSocket (Vosk n'a pas de route `/r
 au prochain audio. Vosk découpe les phrases lui-même : après chaque phrase finalisée, le tampon de
 reprise est réduit à ~500 ms. Précision inférieure à Nemotron, mais bien moins gourmand.
 
-**Combien de flux par instance ?** Cela dépend de la machine : mesure-le avec
-[scripts/bench_asr.py](scripts/bench_asr.py), qui envoie N flux simultanés en temps réel (un extrait
-audio est fourni) et donne, par N, le délai avant le premier texte et le retard du `final` après la
-fin de l'audio :
+**Combien de flux par instance, et avec quel retard ?** Cela dépend de la machine : le script
+[scripts/bench_asr.py](scripts/bench_asr.py) le mesure. Il envoie N flux simultanés en temps réel (un
+extrait audio est fourni) et détaille, pour chaque N : le délai avant le premier texte
+(`first_result`), le retard du `final` après la fin de l'audio (`final_lag`), et pour Vosk le retard de
+**chaque chunk** audio (`chunk_latency`, avec la part de chunks en retard) ainsi que le pic de CPU et de
+mémoire du conteneur. Les percentiles p50/p90/p95/p99/max sont donnés.
 
 ```bash
 cd backend
-uv run python scripts/bench_asr.py vosk 172.21.0.5:2700 -n 1,8,16,32   # une instance Vosk
-uv run python scripts/bench_asr.py nemo 172.21.0.4:8080 -n 1,4,8,16    # une instance Nemo
+# chercher automatiquement la capacité (double N jusqu'à l'échec, puis dichotomie)
+uv run python scripts/bench_asr.py vosk 172.21.0.5:2700 --find-capacity --container nemotron-asr-vosk-2
+# ou des valeurs de N choisies
+uv run python scripts/bench_asr.py vosk 172.21.0.5:2700 -n 1,8,16,32 --json vosk.json
+uv run python scripts/bench_asr.py nemo 172.21.0.4:8080 -n 1,4,8
 uv run python scripts/bench_asr.py gateway localhost:8000 -n 4,16      # tout le backend
 ```
 
-Une instance suit le temps réel tant que `final_lag` reste autour de 1 s ; au-delà elle prend du
-retard, et il faut régler `ASR_MAX_STREAMS_PER_INSTANCE` (ou le `#N` de l'URL) en dessous de ce seuil.
-Mesures sur une machine 12 cœurs partagée (extrait de 11 s, 1 instance) :
+Un N est « tenable » s'il n'y a aucune erreur, si le p95 de `final_lag` reste ≤ `--max-lag` (2 s) et si
+les chunks en retard restent ≤ `--max-late` (5 %). Le résultat de `--find-capacity` est la valeur à
+mettre comme limite de l'instance (`#N` dans `ASR_URL`). En production, le même retard par chunk est
+visible en continu dans Prometheus : `asr_chunk_latency_seconds{instance}` (Vosk).
 
-| serveur | flux | premier texte | retard du final | remarque |
-|---|---|---|---|---|
-| Vosk (CPU) | 8 | 1,2 s | 1,1 s | ~175 % CPU |
-| Vosk (CPU) | 16 | 1,2 s | 1,5–2,3 s | limite raisonnable (~370 % CPU) |
-| Vosk (CPU) | 32 | 1,9 s | 5–6 s | en retard sur le temps réel |
-| Nemo (CPU) | 4 | 1,0 s | 0,5 s | ~300 % CPU, tient le temps réel |
-| Nemo (CPU) | 8 | 1,0 s | > 2 s | en retard sur le temps réel |
-| Nemo (CPU) | 16 et + | - | - | surcharge : coupures (keepalive) |
+Mesure réelle d'une instance Vosk (CPU, machine de 12 cœurs, extrait de 11 s, chunks de 100 ms) :
 
-Sur CPU, compte donc environ **4 flux par instance Nemo** et **8 à 16 par instance Vosk**. Un GPU en
+| flux | premier texte (p95) | retard du final (p95) | retard par chunk (p95 / p99) | chunks en retard | CPU pic |
+|---|---|---|---|---|---|
+| 1 | 1,15 s | 0,45 s | 37 / 42 ms | 0 % | 16 % |
+| 4 | 1,17 s | 0,73 s | 48 / 83 ms | 0,9 % | 277 % |
+| 8 | 1,18 s | 1,09 s | 69 / 134 ms | 2,0 % | 642 % |
+| 10 | 1,18 s | 1,30 s | 96 / 202 ms | 4,7 % | 829 % |
+| 11 | 1,19 s | 1,42 s | 98 / 225 ms | 5,0 % | 856 % |
+| 12 | 1,20 s | 1,55 s | 121 / 243 ms | 6,7 % (trop) | 896 % |
+| 16 | 1,23 s | 2,22 s | 151 / 372 ms | 11,8 % (trop) | 1028 % |
+
+**Comment lire chaque colonne**
+
+Le script affiche, pour chaque N, un bloc détaillé puis un tableau récapitulatif final. Chaque flux de
+test envoie l'extrait audio en temps réel (un chunk de 100 ms toutes les 100 ms) ; les valeurs sont
+donc mesurées sur des flux qui se comportent comme de vrais clients.
+
+*Les percentiles.* Les valeurs sont regroupées sur tous les flux (ou tous les chunks) du test :
+**p50** est la valeur médiane (la moitié est plus rapide), **p90 / p95 / p99** sont les valeurs que 90 %,
+95 % et 99 % des mesures ne dépassent pas, **max** est la pire mesure. Le p95 ou le p99 comptent plus
+que la moyenne : ce sont eux qui font ressentir des à-coups à l'utilisateur.
+
+| colonne (nom dans le script) | ce que c'est | comment l'interpréter |
+|---|---|---|
+| `N` / « flux » | nombre de flux audio envoyés **en même temps** à l'instance. | C'est la variable testée : on l'augmente jusqu'à trouver la limite. |
+| `ok` | flux terminés sans erreur (connexion coupée, timeout, rejet). | Doit valoir N. Moins que N = l'instance a rejeté ou perdu des flux (par exemple les plafonds durs de Nemo). |
+| `first_p95` / « premier texte » | délai entre l'envoi du **premier** chunk audio et la réception du **premier** texte (partiel ou final), au p95. | Le temps « avant que quelque chose s'affiche ». Il inclut le temps de parole nécessaire au modèle pour reconnaître un premier mot (~1 s ici), donc il ne tombe jamais à 0. S'il grimpe avec N, l'instance est chargée dès le démarrage des flux. |
+| `lag_p50` / `lag_p95` / `lag_max` / « retard du final » | délai entre la **fin de l'audio** (dernier chunk + demande de fin) et la réception du texte **final**. | Le retard de fond : tant que l'instance suit le temps réel, il reste faible (0,5 s avec 1 flux). Il augmente quand le serveur accumule du retard, car il doit rattraper l'audio en attente avant de finaliser. C'est le critère principal (`--max-lag`, 2 s par défaut). |
+| `chunk_p95` / `chunk_p99` / « retard par chunk » | (Vosk) délai entre l'envoi d'**un** chunk audio et la réponse du serveur à ce chunk, mesuré pour chaque chunk de chaque flux. | Le signal de charge le plus fin : Vosk répond exactement une fois par chunk. Quand la valeur reste sous 100 ms, le serveur traite l'audio plus vite qu'il n'arrive. Quand elle dépasse 100 ms, le serveur prend du retard sur le temps réel. Le p99 montre les pires à-coups. |
+| `late` / « chunks en retard » | (Vosk) part des chunks dont la réponse a mis plus longtemps que la durée d'un chunk (100 ms). | Mesure « à quelle fréquence » l'instance est en retard. 0 à 2 % = confortable ; au-delà de 5 % (`--max-late`) l'instance est jugée saturée. |
+| `cpu%` / « CPU pic » | pic d'utilisation CPU du conteneur pendant le test (`docker stats`, option `--container`). 100 % = un cœur complet. | Montre la ressource qui limite : ici ~1 cœur par flux, la saturation arrive quand les 12 cœurs (1200 %) sont presque pleins et partagés avec le reste de la machine. |
+| `mem` | pic de mémoire du conteneur (`--container`). | Quasi constant : le modèle est chargé une fois (~5,9 Go pour Vosk anglais) et chaque flux ajoute peu (~13 Mo). La mémoire ne limite pas le nombre de flux ; le CPU, si. |
+| `wall` | durée réelle du test pour ce N. | Une valeur proche de la durée de l'audio (11 s) signifie que les flux ont tenu le rythme ; une valeur bien plus grande signale un gros retard accumulé. |
+| verdict (`sustainable` / `PAST CAPACITY`) | conclusion pour ce N selon les seuils `--max-lag` et `--max-late`, avec la raison du dépassement. | `sustainable` = N flux peuvent tourner ensemble ; `PAST CAPACITY` = N est au-delà de la capacité. |
+
+**Capacité trouvée : 11 flux** pour cette instance sur cette machine. Vosk utilise tous les cœurs
+disponibles (~1 cœur par flux) : la capacité dépend donc surtout du nombre de cœurs et de ce qui tourne
+d'autre. Repère pour Nemo CPU (~4 flux) :
+
+| serveur | flux | retard du final | remarque |
+|---|---|---|---|
+| Nemo (CPU) | 4 | 0,5 s | ~300 % CPU, tient le temps réel |
+| Nemo (CPU) | 8 | > 2 s | en retard sur le temps réel |
+| Nemo (CPU) | 16 et + | - | surcharge : coupures (keepalive) |
+
+Sur CPU, compte donc environ **4 flux par instance Nemo** et **~10 par instance Vosk**. Un GPU en
 tiendra beaucoup plus (non mesuré ici : refais la mesure sur ta machine).
 
 Deux plafonds durs côté serveur Nemo, indépendants de la charge : un thread par flux (4 par défaut,

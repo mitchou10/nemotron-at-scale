@@ -10,8 +10,9 @@ accept `{"reset" : 1}`, but the published Docker images do not, so it is not use
 import asyncio
 import contextlib
 import json
+import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
@@ -44,20 +45,29 @@ async def _open(url: str) -> ClientConnection:
 
 
 class VoskSession:
-    def __init__(self, url: str, connection: ClientConnection) -> None:
+    def __init__(
+        self,
+        url: str,
+        connection: ClientConnection,
+        on_latency: Callable[[float], None] | None = None,
+    ) -> None:
         self._url = url
+        self._on_latency = on_latency
         self._connection: ClientConnection | None = connection
-        self._sent: deque[str] = deque()  # kind of each message awaiting its reply
+        # (kind, send time) of each message awaiting its reply: the server answers 1:1
+        self._sent: deque[tuple[str, float]] = deque()
         self._partial = ""
         self._queue: asyncio.Queue[_Item] = asyncio.Queue()
         self._reader: asyncio.Task[None] = asyncio.create_task(self._read(connection, self._sent))
         self._closing = False
 
-    async def _read(self, connection: ClientConnection, sent: deque[str]) -> None:
+    async def _read(self, connection: ClientConnection, sent: deque[tuple[str, float]]) -> None:
         expected_close = False
         try:
             async for raw in connection:
-                kind = sent.popleft() if sent else _AUDIO
+                kind, sent_at = sent.popleft() if sent else (_AUDIO, time.perf_counter())
+                if kind == _AUDIO and self._on_latency:
+                    self._on_latency(time.perf_counter() - sent_at)
                 for event in self._translate(kind, json.loads(raw)):
                     self._queue.put_nowait(event)
                 expected_close = kind == _EOF
@@ -67,7 +77,7 @@ class VoskSession:
         if not expected_close and not self._closing:
             self._queue.put_nowait(TranscriberUnavailableError("vosk server closed the stream"))
 
-    async def _connected(self) -> tuple[ClientConnection, deque[str]]:
+    async def _connected(self) -> tuple[ClientConnection, deque[tuple[str, float]]]:
         if self._connection is None:
             await self._reader  # deliver the previous utterance's result first
             self._sent = deque()
@@ -77,7 +87,7 @@ class VoskSession:
 
     async def send_audio(self, pcm: bytes) -> None:
         connection, sent = await self._connected()
-        sent.append(_AUDIO)
+        sent.append((_AUDIO, time.perf_counter()))
         try:
             await connection.send(pcm)
         except WebSocketException as exc:
@@ -89,7 +99,7 @@ class VoskSession:
             self._queue.put_nowait(TranscriptEvent("committed", ""))
             return
         connection, sent = self._connection, self._sent
-        sent.append(_EOF)
+        sent.append((_EOF, time.perf_counter()))
         self._connection = None
         try:
             await connection.send(EOF)
@@ -134,11 +144,16 @@ class VoskSession:
 
 
 class VoskTranscriber:
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, on_latency: Callable[[float], None] | None = None) -> None:
+        """`on_latency` receives, for every audio chunk, the seconds until the server replied.
+
+        A reply slower than the chunk duration means the instance is falling behind real time.
+        """
         self._url = url
+        self._on_latency = on_latency
 
     async def open_session(self) -> TranscriptionSession:
-        return VoskSession(self._url, await _open(self._url))
+        return VoskSession(self._url, await _open(self._url), self._on_latency)
 
     async def ping(self) -> bool:
         """The server has no health route: a successful WebSocket handshake means ready."""

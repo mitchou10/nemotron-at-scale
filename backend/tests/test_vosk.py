@@ -1,5 +1,6 @@
 """Vosk client tests against a fake server speaking the vosk-server protocol."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,6 +23,7 @@ class FakeVosk:
     final_text: str = ""
     die_after: int | None = None
     close_after: int | None = None
+    reply_delay: float = 0.0
     received: list[bytes] = field(default_factory=list)
     configs: list[dict[str, object]] = field(default_factory=list)
     eofs: int = 0
@@ -48,6 +50,7 @@ async def fake_vosk(**kw: object) -> AsyncIterator[FakeVosk]:
                 ws.transport.abort()
                 return
             reply = fake.replies.pop(0) if fake.replies else {"partial": ""}
+            await asyncio.sleep(fake.reply_delay)
             await ws.send(json.dumps(reply))
             if fake.close_after is not None and len(fake.received) >= fake.close_after:
                 await ws.close()
@@ -272,3 +275,42 @@ async def test_stream_fails_over_from_nemo_to_vosk_and_replays_audio() -> None:
             await session.close()
     assert vosk.received == chunks
     assert texts[-1] == "one two"
+
+
+async def test_latency_is_reported_for_every_audio_chunk_but_not_for_eof() -> None:
+    latencies: list[float] = []
+    async with fake_vosk(reply_delay=0.05, final_text="x") as vosk:
+        session = await VoskTranscriber(
+            vosk_url(vosk.port), on_latency=latencies.append
+        ).open_session()
+        for _ in range(3):
+            await session.send_audio(b"\x00\x00")
+        await session.end()
+        await collect(session, 2)
+        await session.close()
+    assert len(latencies) == 3
+    assert all(0.05 <= latency < 1.0 for latency in latencies)
+
+
+async def test_gateway_publishes_vosk_chunk_latency_per_instance() -> None:
+    async with fake_vosk(reply_delay=0.02) as vosk:
+        gw = Gateway(DnsDiscovery(parse_endpoints(f"vosk://127.0.0.1:{vosk.port}", 8)))
+        async with running(gw):
+            labels = {"instance": f"127.0.0.1:{vosk.port}"}
+            session = await gw.open_session("alice")
+
+            async def drain() -> None:
+                async for _ in session.events():
+                    pass
+
+            reader = asyncio.create_task(drain())
+            for _ in range(4):
+                await session.send_audio(b"\x00\x00")
+            await asyncio.sleep(0.3)
+            registry = gw.metrics.registry
+            count = registry.get_sample_value("asr_chunk_latency_seconds_count", labels)
+            total = registry.get_sample_value("asr_chunk_latency_seconds_sum", labels)
+            reader.cancel()
+            await session.close()
+    assert count == 4
+    assert total is not None and total >= 4 * 0.02

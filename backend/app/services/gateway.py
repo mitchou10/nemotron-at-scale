@@ -201,11 +201,12 @@ class Gateway:
                 await self._save(instance, gone=True)
 
     def _new_instance(self, d: DiscoveredInstance) -> Instance:
-        client: InstanceClient = (
-            VoskTranscriber(d.url)
-            if d.kind == "vosk"
-            else NemoSpeechTranscriber(d.url, self._api_key)
-        )
+        client: InstanceClient
+        if d.kind == "vosk":
+            histogram = self.metrics.chunk_latency.labels(d.key)
+            client = VoskTranscriber(d.url, on_latency=histogram.observe)
+        else:
+            client = NemoSpeechTranscriber(d.url, self._api_key)
         return Instance(d.key, d.priority, d.max_streams, d.url, d.probe_url, client, kind=d.kind)
 
     async def _save(self, instance: Instance, *, gone: bool = False) -> None:

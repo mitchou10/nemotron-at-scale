@@ -8,6 +8,7 @@ from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.registry import Collector
 
 PROBE_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0)
+CHUNK_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0)
 RESULT_BUCKETS = (0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0, 5.0)
 
 _INSTANCE = ["instance"]
@@ -90,6 +91,14 @@ class GatewayMetrics:
             "Time from the first audio sent to the first transcript received",
             _INSTANCE,
             buckets=RESULT_BUCKETS,
+            registry=r,
+        )
+        self.chunk_latency = Histogram(
+            "asr_chunk_latency_seconds",
+            "Vosk only: seconds between sending an audio chunk and the server's reply "
+            "(above the chunk duration, ~0.1 s, the instance is falling behind real time)",
+            _INSTANCE,
+            buckets=CHUNK_BUCKETS,
             registry=r,
         )
         self.buffer_limit = Gauge(
