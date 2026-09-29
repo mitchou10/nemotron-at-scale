@@ -1,5 +1,5 @@
 """API package."""
 
-from app.api.routes import audio_router, health_router
+from app.api.routes import asr_router, audio_router, health_router
 
-__all__ = ["audio_router", "health_router"]
+__all__ = ["asr_router", "audio_router", "health_router"]

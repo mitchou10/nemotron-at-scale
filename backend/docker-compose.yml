@@ -2,6 +2,16 @@
 # Usage:
 #   Development:  docker compose --profile dev up
 #   Production:   docker compose up
+#
+# Live transcription runs in separate `nemo-speech serve` instances (NeMo-Speech.cpp).
+# The backend gateway resolves the service names in ASR_URL to every replica IP, measures
+# their latency and load, and routes each audio stream to the best one:
+#   CPU:  docker compose --profile cpu up --build
+#   GPU:  docker compose --profile gpu up --build     (NVIDIA container toolkit)
+#   Both: --profile cpu --profile gpu   (the gateway prefers the faster / less loaded one)
+#   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2
+#   Status: GET /api/v1/asr/instances
+#   Metrics: GET /metrics (Prometheus); UI with --profile monitoring on http://localhost:9090
 
 services:
   db:
@@ -30,6 +40,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      ASR_ENABLED: ${ASR_ENABLED:-true}
     ports:
       - "8000:8000"
     depends_on:
@@ -38,6 +50,99 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.0.1
+    container_name: nemotron-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  asr-model:
+    image: curlimages/curl:8.10.1
+    user: root
+    volumes:
+      - asr_models:/models
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        f="/models/$${ASR_MODEL_FILE}"
+        [ -s "$$f" ] || { curl -fL --retry 3 -o "$$f.part" "$${ASR_MODEL_URL}" && mv "$$f.part" "$$f"; }
+    environment:
+      ASR_MODEL_FILE: ${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+      ASR_MODEL_URL: ${ASR_MODEL_URL:-https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+
+  asr-cpu:
+    profiles: ["cpu"]
+    image: nemo-speech-runtime:cpu
+    build:
+      context: https://github.com/NVIDIA/NeMo-Speech.cpp.git#${NEMO_SPEECH_REF:-main}
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        ENABLE_CUDA: "OFF"
+        ENABLE_CUDA_GRAPHS: "OFF"
+        ENABLE_GRPC: "OFF"
+        ENABLE_FLASHLIGHT: "OFF"
+        ENABLE_NORM: "OFF"
+    restart: unless-stopped
+    environment:
+      NEMO_SPEECH_ASR_BACKEND_GPU: "-1"
+    volumes:
+      - asr_models:/models:ro
+    command:
+      - serve
+      - --host=0.0.0.0
+      - --asr-model=/models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+    depends_on:
+      asr-model:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "nemo-speech", "health", "--url", "http://127.0.0.1:8080/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  asr-gpu:
+    profiles: ["gpu"]
+    image: nemo-speech-runtime:gpu
+    build:
+      context: https://github.com/NVIDIA/NeMo-Speech.cpp.git#${NEMO_SPEECH_REF:-main}
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        ENABLE_CUDA: "ON"
+        ENABLE_GRPC: "OFF"
+        ENABLE_FLASHLIGHT: "OFF"
+        ENABLE_NORM: "OFF"
+    restart: unless-stopped
+    volumes:
+      - asr_models:/models:ro
+    command:
+      - serve
+      - --host=0.0.0.0
+      - --asr-model=/models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+    depends_on:
+      asr-model:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "nemo-speech", "health", "--url", "http://127.0.0.1:8080/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
 
   backend-dev:
     profiles: ["dev"]
@@ -60,3 +165,5 @@ services:
 
 volumes:
   postgres_data:
+  asr_models:
+  prometheus_data:
