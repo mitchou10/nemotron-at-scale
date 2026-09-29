@@ -115,3 +115,16 @@ async def test_events_raise_when_connection_breaks() -> None:
         with pytest.raises(TranscriberUnavailableError):
             async for _ in session.events():
                 pass
+
+
+async def test_empty_deltas_do_not_repeat_the_partial() -> None:
+    async def handler(ws: ServerConnection) -> None:
+        for delta in ("hel", "", "lo", ""):
+            await ws.send(json.dumps({"type": DELTA, "delta": delta}))
+        await ws.close()
+
+    async with fake_server(handler) as url:
+        session = await NemoSpeechTranscriber(url).open_session()
+        events = [e async for e in session.events()]
+        await session.close()
+    assert events == [TranscriptEvent("partial", "hel"), TranscriptEvent("partial", "hello")]

@@ -31,11 +31,13 @@ from app.services.state import (
     safely,
 )
 from app.services.transcription import (
+    InstanceClient,
     TranscriberBusyError,
     TranscriberUnavailableError,
     TranscriptEvent,
     TranscriptionSession,
 )
+from app.services.vosk import VoskTranscriber
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,8 @@ class Instance:
     max_streams: int
     url: str
     probe_url: str
-    transcriber: NemoSpeechTranscriber
+    transcriber: InstanceClient
+    kind: str = "nemo"
     healthy: bool = False
     present: bool = True
     latency_ms: float | None = None
@@ -198,14 +201,12 @@ class Gateway:
                 await self._save(instance, gone=True)
 
     def _new_instance(self, d: DiscoveredInstance) -> Instance:
-        return Instance(
-            d.key,
-            d.priority,
-            d.max_streams,
-            d.url,
-            d.probe_url,
-            NemoSpeechTranscriber(d.url, self._api_key),
+        client: InstanceClient = (
+            VoskTranscriber(d.url)
+            if d.kind == "vosk"
+            else NemoSpeechTranscriber(d.url, self._api_key)
         )
+        return Instance(d.key, d.priority, d.max_streams, d.url, d.probe_url, client, kind=d.kind)
 
     async def _save(self, instance: Instance, *, gone: bool = False) -> None:
         if gone:
@@ -239,8 +240,11 @@ class Gateway:
         assert self._client is not None
         started = time.perf_counter()
         try:
-            response = await self._client.get(instance.probe_url)
-            ok = response.status_code == 200
+            if isinstance(instance.transcriber, VoskTranscriber):
+                ok = await instance.transcriber.ping()
+            else:
+                response = await self._client.get(instance.probe_url)
+                ok = response.status_code == 200
         except httpx.HTTPError:
             ok = False
         if not ok:
@@ -322,6 +326,7 @@ class Gateway:
         return [
             {
                 "instance": i.key,
+                "kind": i.kind,
                 "healthy": i.healthy and i.present,
                 "priority": i.priority,
                 "latency_ms": None if i.latency_ms is None else round(i.latency_ms, 1),

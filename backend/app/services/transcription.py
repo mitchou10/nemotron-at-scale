@@ -15,8 +15,10 @@ class TranscriberBusyError(TranscriberUnavailableError):
 
 @dataclass(frozen=True)
 class TranscriptEvent:
-    type: Literal["partial", "final", "committed"]
+    # "committed" and "trim" are internal: they tell the failover buffer which audio is done.
+    type: Literal["partial", "final", "committed", "trim"]
     text: str
+    keep_ms: int = 0
 
     def to_json(self) -> dict[str, str]:
         return {"type": self.type, "text": self.text}
@@ -30,6 +32,12 @@ class TranscriptionSession(Protocol):
     def events(self) -> AsyncIterator[TranscriptEvent]: ...
 
     async def close(self) -> None: ...
+
+
+class InstanceClient(Protocol):
+    """Opens sessions on one transcription instance."""
+
+    async def open_session(self) -> TranscriptionSession: ...
 
 
 class Transcriber(Protocol):

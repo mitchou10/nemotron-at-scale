@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     # its IPs. Append `#N` to a URL to set its per-instance stream limit (default below).
     ASR_URL: str = (
         "ws://asr-gpu:8080/v1/audio/transcriptions/realtime,"
-        "ws://asr-cpu:8080/v1/audio/transcriptions/realtime"
+        "ws://asr-cpu:8080/v1/audio/transcriptions/realtime,"
+        "vosk://asr-vosk:2700"
     )
     ASR_API_KEY: str | None = None
     ASR_DISCOVERY: Literal["dns", "static"] = "dns"

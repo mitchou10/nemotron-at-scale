@@ -42,8 +42,10 @@ class NemoSpeechSession:
                 message = json.loads(raw)
                 kind = message.get("type")
                 if kind == DELTA:
-                    self._partial += message.get("delta", "")
-                    yield TranscriptEvent("partial", self._partial)
+                    delta = message.get("delta", "")
+                    if delta:
+                        self._partial += delta
+                        yield TranscriptEvent("partial", self._partial)
                 elif kind == COMPLETED:
                     self._partial = ""
                     if message.get("transcript"):

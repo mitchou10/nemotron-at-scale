@@ -71,3 +71,28 @@ def test_parse_endpoints() -> None:
         Endpoint(f"ws://b:2{PATH}", 8),
     ]
     assert parse_endpoints("", 8) == []
+
+
+def test_parse_vosk_endpoint_defaults_to_port_2700() -> None:
+    assert parse_endpoints("vosk://asr-vosk#4,vosk://other:2800", 8) == [
+        Endpoint("ws://asr-vosk:2700", 4, "vosk"),
+        Endpoint("ws://other:2800", 8, "vosk"),
+    ]
+
+
+async def test_vosk_instances_are_probed_on_their_own_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_resolve(host: str, port: int) -> list[str]:
+        return ["10.0.0.7"]
+
+    monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
+    [found] = await DnsDiscovery(parse_endpoints("vosk://asr-vosk", 8)).discover()
+    assert (found.kind, found.key, found.url, found.probe_url) == (
+        "vosk",
+        "10.0.0.7:2700",
+        "ws://10.0.0.7:2700",
+        "ws://10.0.0.7:2700",
+    )
+    [static] = await StaticDiscovery(parse_endpoints("vosk://asr-vosk", 8)).discover()
+    assert static.kind == "vosk"

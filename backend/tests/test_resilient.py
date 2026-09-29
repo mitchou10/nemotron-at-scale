@@ -266,3 +266,35 @@ async def test_observer_told_when_no_instance_left() -> None:
     with pytest.raises(TranscriberUnavailableError):
         await session.send_audio(b"1")
     assert observer.calls == [("recovering",), ("finished", StreamStatus.FAILED)]
+
+
+async def test_trim_event_keeps_only_recent_audio_and_commit_markers() -> None:
+    a, b = FakeInner("a"), FakeInner("b")
+    session = make(a, Opener(b))
+    half_second = b"\x00" * (BYTES_PER_SECOND // 2)
+    old, older, recent = b"\x01" + half_second, b"\x02" + half_second, b"\x03" + half_second
+    await session.send_audio(older)
+    await session.end()
+    await session.send_audio(old)
+    await session.send_audio(recent)
+    a.queue.put_nowait(TranscriptEvent("trim", "", keep_ms=500))
+    a.queue.put_nowait(TranscriptEvent("partial", "x"))
+    stream = session.events()
+    assert await anext(stream) == TranscriptEvent("partial", "x")
+    assert session.buffered_bytes == len(recent)
+    a.dead = True
+    await session.send_audio(b"z")
+    assert b.sent == ["commit", recent, b"z"]
+    await stream.aclose()
+
+
+async def test_trim_to_zero_keeps_nothing() -> None:
+    a, b = FakeInner("a"), FakeInner("b")
+    session = make(a, Opener(b))
+    await session.send_audio(b"\x00" * 100)
+    a.queue.put_nowait(TranscriptEvent("trim", "", keep_ms=0))
+    a.queue.put_nowait(TranscriptEvent("partial", "x"))
+    stream = session.events()
+    await anext(stream)
+    assert session.buffered_bytes == 0
+    await stream.aclose()

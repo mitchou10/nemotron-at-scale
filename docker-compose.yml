@@ -8,8 +8,9 @@
 # their latency and load, and routes each audio stream to the best one:
 #   CPU:  docker compose --profile cpu up --build
 #   GPU:  docker compose --profile gpu up --build     (NVIDIA container toolkit)
-#   Both: --profile cpu --profile gpu   (the gateway prefers the faster / less loaded one)
-#   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2
+#   Vosk (Kaldi, light CPU model): --profile vosk   (VOSK_IMAGE picks the language, e.g. alphacep/kaldi-fr)
+#   Any mix works, e.g. --profile cpu --profile vosk: the gateway fills instances in ASR_URL order
+#   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2   /   --scale asr-vosk=4
 #   Status: GET /api/v1/asr/instances
 #   Metrics: GET /metrics (Prometheus); UI with --profile monitoring on http://localhost:9090
 
@@ -25,7 +26,7 @@ services:
       POSTGRES_PASSWORD: nemotron
       POSTGRES_DB: nemotron
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -45,7 +46,7 @@ services:
     environment:
       ASR_ENABLED: ${ASR_ENABLED:-true}
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +60,7 @@ services:
     container_name: nemotron-prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./backend/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -88,23 +89,45 @@ services:
       args:
         ENABLE_CUDA: "OFF"
         ENABLE_CUDA_GRAPHS: "OFF"
+        ENABLE_GGML_PATCHES: "OFF"
         ENABLE_GRPC: "OFF"
         ENABLE_FLASHLIGHT: "OFF"
         ENABLE_NORM: "OFF"
     restart: unless-stopped
     environment:
       NEMO_SPEECH_ASR_BACKEND_GPU: "-1"
+      # each live stream holds one worker thread: this is the hard cap on streams per instance
+      NEMO_SPEECH_HTTP_THREADS: ${ASR_HTTP_THREADS:-32}
     volumes:
       - asr_models:/models:ro
     command:
       - serve
-      - --host=0.0.0.0
-      - --asr-model=/models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+      - --host
+      - 0.0.0.0
+      - --asr-model
+      - /models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
     depends_on:
       asr-model:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "nemo-speech", "health", "--url", "http://127.0.0.1:8080/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  asr-vosk:
+    profiles: ["vosk"]
+    image: ${VOSK_IMAGE:-alphacep/kaldi-en:latest}
+    restart: unless-stopped
+    environment:
+      VOSK_SAMPLE_RATE: "16000"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import socket; socket.create_connection(("127.0.0.1", 2700), 2).close()
       interval: 15s
       timeout: 5s
       start_period: 30s
@@ -119,16 +142,21 @@ services:
       target: runtime
       args:
         ENABLE_CUDA: "ON"
+        ENABLE_GGML_PATCHES: "OFF"
         ENABLE_GRPC: "OFF"
         ENABLE_FLASHLIGHT: "OFF"
         ENABLE_NORM: "OFF"
     restart: unless-stopped
+    environment:
+      NEMO_SPEECH_HTTP_THREADS: ${ASR_HTTP_THREADS:-32}
     volumes:
       - asr_models:/models:ro
     command:
       - serve
-      - --host=0.0.0.0
-      - --asr-model=/models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
+      - --host
+      - 0.0.0.0
+      - --asr-model
+      - /models/${ASR_MODEL_FILE:-nemotron-speech-streaming-en-0.6b.q8_0.gguf}
     depends_on:
       asr-model:
         condition: service_completed_successfully
@@ -155,7 +183,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
     depends_on:

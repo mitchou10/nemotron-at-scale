@@ -32,6 +32,7 @@ backend/
 │   └── services/
 │       ├── transcription.py  # Interfaces de transcription (indépendantes du modèle)
 │       ├── nemo_speech.py    # Client du serveur `nemo-speech serve`
+│       ├── vosk.py           # Client d'un serveur Vosk (Kaldi)
 │       ├── discovery.py      # Discovery abstraite, StaticDiscovery, DnsDiscovery
 │       ├── state.py          # StateStore abstrait, en mémoire, StreamRecorder
 │       ├── state_sql.py      # StateStore en base (SQLAlchemy)
@@ -125,7 +126,10 @@ alembic downgrade -1
 
 ### Transcription live (Nemotron 0.6B)
 
-Le modèle tourne dans des instances séparées : [`nemo-speech serve`](https://github.com/NVIDIA/NeMo-Speech.cpp)
+Deux types de serveurs ASR, chacun dans ses propres conteneurs (services compose séparés) :
+[`nemo-speech serve`](https://github.com/NVIDIA/NeMo-Speech.cpp) (Nemotron) et
+[Vosk](https://github.com/alphacep/vosk-server) (Kaldi, plus léger, CPU). La gateway les traite de la
+même façon et peut les mélanger. Nemo :
 (runtime C++, GGUF quantifié Q8). Le backend embarque une **gateway** ([gateway.py](app/services/gateway.py)) :
 
 - **Découverte** ([discovery.py](app/services/discovery.py)) : classe abstraite `Discovery` (méthode
@@ -192,7 +196,9 @@ Le client envoie des chunks binaires PCM16 (16 kHz, mono) ; le serveur répond e
 ```bash
 docker compose --profile cpu up --build             # instance(s) CPU
 docker compose --profile gpu up --build             # instance(s) GPU (NVIDIA container toolkit)
-docker compose --profile cpu --profile gpu up       # les deux : la gateway choisit
+docker compose --profile vosk up                    # instance(s) Vosk (Kaldi)
+docker compose --profile cpu --profile vosk up      # mélange : la gateway remplit dans l'ordre de ASR_URL
+docker compose --profile vosk up --scale asr-vosk=4 # plusieurs instances Vosk
 docker compose --profile cpu up --scale asr-cpu=3   # plusieurs instances
 ```
 
@@ -200,3 +206,59 @@ Le GGUF (~700 Mo)
 est téléchargé une fois dans le volume `asr_models` ; les images sont construites depuis le
 Dockerfile officiel de NVIDIA (`NEMO_SPEECH_REF` pour épingler une version). Les instances ASR
 ne sont pas publiées sur l'hôte : seul le backend y accède.
+
+**Vosk** ([vosk.py](app/services/vosk.py)) : service `asr-vosk` (image `alphacep/kaldi-en`, ~6 Go, le
+modèle est dedans ; `VOSK_IMAGE` choisit la langue, ex. `alphacep/kaldi-fr`). Dans `ASR_URL`, une
+instance Vosk s'écrit `vosk://asr-vosk:2700` (limite par instance avec `#N`, comme pour Nemo) ; la
+santé est testée par une poignée de main WebSocket (Vosk n'a pas de route `/ready`). Le message
+`end` envoie `eof` : Vosk renvoie le résultat final et ferme la connexion, la gateway se reconnecte
+au prochain audio. Vosk découpe les phrases lui-même : après chaque phrase finalisée, le tampon de
+reprise est réduit à ~500 ms. Précision inférieure à Nemotron, mais bien moins gourmand.
+
+**Combien de flux par instance ?** Cela dépend de la machine : mesure-le avec
+[scripts/bench_asr.py](scripts/bench_asr.py), qui envoie N flux simultanés en temps réel (un extrait
+audio est fourni) et donne, par N, le délai avant le premier texte et le retard du `final` après la
+fin de l'audio :
+
+```bash
+cd backend
+uv run python scripts/bench_asr.py vosk 172.21.0.5:2700 -n 1,8,16,32   # une instance Vosk
+uv run python scripts/bench_asr.py nemo 172.21.0.4:8080 -n 1,4,8,16    # une instance Nemo
+uv run python scripts/bench_asr.py gateway localhost:8000 -n 4,16      # tout le backend
+```
+
+Une instance suit le temps réel tant que `final_lag` reste autour de 1 s ; au-delà elle prend du
+retard, et il faut régler `ASR_MAX_STREAMS_PER_INSTANCE` (ou le `#N` de l'URL) en dessous de ce seuil.
+Mesures sur une machine 12 cœurs partagée (extrait de 11 s, 1 instance) :
+
+| serveur | flux | premier texte | retard du final | remarque |
+|---|---|---|---|---|
+| Vosk (CPU) | 8 | 1,2 s | 1,1 s | ~175 % CPU |
+| Vosk (CPU) | 16 | 1,2 s | 1,5–2,3 s | limite raisonnable (~370 % CPU) |
+| Vosk (CPU) | 32 | 1,9 s | 5–6 s | en retard sur le temps réel |
+| Nemo (CPU) | 4 | 1,0 s | 0,5 s | ~300 % CPU, tient le temps réel |
+| Nemo (CPU) | 8 | 1,0 s | > 2 s | en retard sur le temps réel |
+| Nemo (CPU) | 16 et + | - | - | surcharge : coupures (keepalive) |
+
+Sur CPU, compte donc environ **4 flux par instance Nemo** et **8 à 16 par instance Vosk**. Un GPU en
+tiendra beaucoup plus (non mesuré ici : refais la mesure sur ta machine).
+
+Deux plafonds durs côté serveur Nemo, indépendants de la charge : un thread par flux (4 par défaut,
+relevé à 32 par `ASR_HTTP_THREADS` dans le compose) et `asr.batching.state_arena_slots` (16 par
+défaut : au-delà, les nouveaux flux sont rejetés ; réglable avec la variable d'environnement
+`NEMO_SPEECH_ASR_BATCHING_STATE_ARENA_SLOTS`). Le calcul neuronal est sérialisé côté serveur, d'où
+un usage CPU d'environ 3 à 4 cœurs quel que soit le nombre de flux.
+
+**Modèles chargés par instance : un seul.** Une instance Nemo (un processus `nemo-speech serve`)
+charge son modèle une fois (~1 Go de RAM au repos) et tous ses flux le partagent, avec un petit état
+par flux (~5 Mo). Une instance Vosk charge un modèle (~5 Go de RAM pour l'anglais) et chaque flux ajoute
+un reconnaisseur léger (~13 Mo mesurés). Pour un autre modèle ou une autre langue avec Vosk, il faut
+une autre instance (`VOSK_IMAGE=alphacep/kaldi-fr`) ; le modèle multilingue de Nemo couvre plusieurs
+langues dans une seule instance.
+
+Les images Nemo sont construites avec `ENABLE_GGML_PATCHES=OFF` (ggml standard) : avec le contexte git
+distant de Docker, les patches ggml de NVIDIA ne s'appliquent pas (« does NOT apply cleanly »).
+Les kernels optimisés des patches ne sont donc pas utilisés (surtout sensible sur GPU).
+
+Les ports hôte sont configurables (`DB_PORT`, `BACKEND_PORT`, `PROMETHEUS_PORT` dans `.env`) si
+5432, 8000 ou 9090 sont déjà pris.

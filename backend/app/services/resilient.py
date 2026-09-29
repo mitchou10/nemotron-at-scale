@@ -79,6 +79,21 @@ class ResilientSession:
             self._buffered -= len(self._log[index] or b"")
             del self._log[index]
 
+    def _trim_to_recent(self, keep_ms: int) -> None:
+        """Drop audio older than the last `keep_ms` (commit markers stay in place)."""
+        keep = keep_ms * BYTES_PER_SECOND // 1000
+        kept = 0
+        newest_first: list[bytes | None] = []
+        for chunk in reversed(self._log):
+            if chunk is None:
+                newest_first.append(None)
+            elif kept < keep:
+                newest_first.append(chunk)
+                kept += len(chunk)
+            else:
+                self._buffered -= len(chunk)
+        self._log = deque(reversed(newest_first))
+
     def _acknowledge_commit(self) -> None:
         while self._log:
             chunk = self._log.popleft()
@@ -117,6 +132,8 @@ class ResilientSession:
                 async for event in inner.events():
                     if event.type == "committed":
                         self._acknowledge_commit()
+                    elif event.type == "trim":
+                        self._trim_to_recent(event.keep_ms)
                     else:
                         yield event
             except TranscriberUnavailableError:

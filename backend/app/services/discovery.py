@@ -4,7 +4,10 @@ import asyncio
 import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import urlsplit
+
+VOSK_PORT = 2700
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,7 @@ class Endpoint:
 
     url: str
     max_streams: int
+    kind: Literal["nemo", "vosk"] = "nemo"
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,7 @@ class DiscoveredInstance:
     probe_url: str
     max_streams: int
     priority: int
+    kind: Literal["nemo", "vosk"] = "nemo"
 
 
 class Discovery(ABC):
@@ -38,12 +43,16 @@ def _describe(endpoint: Endpoint, priority: int, host: str, port: int) -> Discov
     parts = urlsplit(endpoint.url)
     secure = parts.scheme == "wss"
     key = f"{host}:{port}"
+    url = parts._replace(netloc=key, fragment="").geturl()
+    # Vosk has no HTTP health route: it is probed with a WebSocket handshake on its own URL.
+    probe_url = url if endpoint.kind == "vosk" else f"{'https' if secure else 'http'}://{key}/ready"
     return DiscoveredInstance(
         key=key,
-        url=parts._replace(netloc=key, fragment="").geturl(),
-        probe_url=f"{'https' if secure else 'http'}://{key}/ready",
+        url=url,
+        probe_url=probe_url,
         max_streams=endpoint.max_streams,
         priority=priority,
+        kind=endpoint.kind,
     )
 
 
@@ -102,12 +111,21 @@ class DnsDiscovery(Discovery):
 
 
 def parse_endpoints(urls: str, default_max_streams: int) -> list[Endpoint]:
-    """Parse `url[#limit],url[#limit],...` (comma separated, in fill order)."""
+    """Parse `url[#limit],url[#limit],...` (comma separated, in fill order).
+
+    `ws://` / `wss://` URLs are nemo-speech instances; `vosk://host[:2700]` is a Vosk server.
+    """
     endpoints = []
     for raw in (u.strip() for u in urls.split(",")):
         if not raw:
             continue
         parts = urlsplit(raw)
         limit = int(parts.fragment) if parts.fragment else default_max_streams
-        endpoints.append(Endpoint(parts._replace(fragment="").geturl(), limit))
+        kind: Literal["nemo", "vosk"] = "nemo"
+        if parts.scheme == "vosk":
+            kind = "vosk"
+            parts = parts._replace(
+                scheme="ws", netloc=f"{parts.hostname}:{parts.port or VOSK_PORT}"
+            )
+        endpoints.append(Endpoint(parts._replace(fragment="").geturl(), limit, kind))
     return endpoints
