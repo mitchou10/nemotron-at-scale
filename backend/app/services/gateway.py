@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import logging
 import time
+import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 
@@ -20,7 +21,7 @@ import httpx
 from app.services.discovery import DiscoveredInstance, Discovery
 from app.services.metrics import GatewayMetrics
 from app.services.nemo_speech import NemoSpeechTranscriber
-from app.services.resilient import ResilientSession
+from app.services.resilient import BYTES_PER_SECOND, ResilientSession
 from app.services.state import (
     InMemoryStateStore,
     InstanceState,
@@ -145,6 +146,9 @@ class Gateway:
         self._api_key = api_key
         self.store: StateStore = store or InMemoryStateStore()
         self.metrics = metrics or GatewayMetrics()
+        self.metrics.buffer_limit.set(buffer_seconds * BYTES_PER_SECOND)
+        self.metrics.track_buffers(self._buffer_usage)
+        self._sessions: weakref.WeakSet[ResilientSession] = weakref.WeakSet()
         self._probe_interval = probe_interval
         self._max_latency_ms = max_latency_ms
         self._buffer_seconds = buffer_seconds
@@ -255,13 +259,22 @@ class Gateway:
         first = await self._open_tracked(set())
         recorder = StreamRecorder(self.store, client_id)
         await recorder.started(first.key)
-        return ResilientSession(
+        session = ResilientSession(
             self._open_tracked,
             first,
             buffer_seconds=self._buffer_seconds,
             max_failovers=self._max_failovers,
             observer=recorder,
         )
+        self._sessions.add(session)
+        return session
+
+    def _buffer_usage(self) -> dict[str, int]:
+        usage = dict.fromkeys(self._instances, 0)
+        for session in self._sessions:
+            key = session.instance_key
+            usage[key] = usage.get(key, 0) + session.buffered_bytes
+        return usage
 
     async def _open_tracked(self, excluded: set[str]) -> _TrackedSession:
         usable = [

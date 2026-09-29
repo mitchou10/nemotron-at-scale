@@ -86,6 +86,14 @@ class ResilientSession:
                 return
             self._buffered -= len(chunk)
 
+    @property
+    def instance_key(self) -> str:
+        return self._inner.key
+
+    @property
+    def buffered_bytes(self) -> int:
+        return self._buffered
+
     async def send_audio(self, pcm: bytes) -> None:
         inner, generation = self._inner, self._generation
         self._record(pcm)
@@ -171,6 +179,8 @@ class ResilientSession:
 
     async def close(self) -> None:
         self._closing = True
+        self._log.clear()
+        self._buffered = 0
         await self._inner.close()
         if self._observer:
             await self._observer.finished(StreamStatus.ENDED)

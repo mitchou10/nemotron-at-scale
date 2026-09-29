@@ -1,5 +1,7 @@
 """Gateway metrics tests, read back from the Prometheus registry."""
 
+import sys
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -153,3 +155,34 @@ def test_metrics_endpoint_empty_when_disabled(ws_client: TestClient) -> None:
     response = ws_client.get("/metrics")
     assert response.status_code == 200
     assert response.text == ""
+
+
+async def test_buffer_bytes_per_instance_follow_the_stream() -> None:
+    async with fake_instance("a", die_after=3) as a, fake_instance("b") as b:
+        gw = make_gateway([url(a.port), url(b.port)])
+        async with running(gw):
+            key_a, key_b = f"127.0.0.1:{a.port}", f"127.0.0.1:{b.port}"
+            assert sample(gw, "asr_buffer_bytes", instance=key_a) == 0
+            assert sample(gw, "asr_buffer_limit_bytes") == 30 * 32_000
+
+            session = await gw.open_session()
+            await session.send_audio(b"\x00" * 100)
+            await session.send_audio(b"\x00" * 50)
+            assert sample(gw, "asr_buffer_bytes", instance=key_a) == 150
+            assert sample(gw, "asr_buffer_bytes", instance=key_b) == 0
+
+            await session.send_audio(b"\x00" * 10)  # instance a dies on this chunk
+            async for event in session.events():
+                if event.text == "b":
+                    break
+            assert sample(gw, "asr_buffer_bytes", instance=key_a) == 0
+            assert sample(gw, "asr_buffer_bytes", instance=key_b) == 160
+
+            await session.close()
+            assert sample(gw, "asr_buffer_bytes", instance=key_b) == 0
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="process metrics are Linux-only")
+def test_backend_process_memory_is_exposed() -> None:
+    gw = make_gateway([url(1)])
+    assert (sample(gw, "process_resident_memory_bytes") or 0) > 0

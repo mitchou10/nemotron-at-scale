@@ -1,13 +1,33 @@
 """Prometheus metrics of the ASR gateway (per instance)."""
 
 import contextlib
+from collections.abc import Callable, Iterable
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, ProcessCollector
+from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.registry import Collector
 
 PROBE_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0)
 RESULT_BUCKETS = (0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0, 5.0)
 
 _INSTANCE = ["instance"]
+
+
+class BufferCollector(Collector):
+    """Audio bytes buffered for failover, per instance, computed at scrape time."""
+
+    def __init__(self, usage: Callable[[], dict[str, int]]) -> None:
+        self._usage = usage
+
+    def collect(self) -> Iterable[GaugeMetricFamily]:
+        family = GaugeMetricFamily(
+            "asr_buffer_bytes",
+            "Audio bytes buffered in memory for failover, by instance serving the streams",
+            labels=["instance"],
+        )
+        for instance, size in sorted(self._usage().items()):
+            family.add_metric([instance], size)
+        yield family
 
 
 class GatewayMetrics:
@@ -72,12 +92,19 @@ class GatewayMetrics:
             buckets=RESULT_BUCKETS,
             registry=r,
         )
+        self.buffer_limit = Gauge(
+            "asr_buffer_limit_bytes", "Maximum audio bytes buffered per stream", registry=r
+        )
+        ProcessCollector(registry=r)
         self.rejected = Counter(
             "asr_streams_rejected_total",
             "Streams the gateway could not place",
             ["reason"],
             registry=r,
         )
+
+    def track_buffers(self, usage: Callable[[], dict[str, int]]) -> None:
+        self.registry.register(BufferCollector(usage))
 
     def publish_instance(
         self, key: str, *, up: bool, latency_ms: float | None, active: int, max_streams: int

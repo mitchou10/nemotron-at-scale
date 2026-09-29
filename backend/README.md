@@ -173,6 +173,12 @@ Le modèle tourne dans des instances séparées : [`nemo-speech serve`](https://
   | `asr_instance_failures_total` | compteur | flux coupés par la chute de l'instance |
   | `asr_failovers_total` | compteur | flux repris sur cette instance après une panne ailleurs |
   | `asr_streams_rejected_total{reason}` | compteur | flux refusés (`busy`, `unavailable`) |
+  | `asr_buffer_bytes` | gauge | octets audio gardés en mémoire pour la reprise, par instance qui sert les flux |
+  | `asr_buffer_limit_bytes` | gauge | plafond du tampon par flux (`ASR_BUFFER_SECONDS` × 32 000) |
+  | `process_resident_memory_bytes` (et `process_*`) | gauge | mémoire réelle du process backend (Linux) |
+
+  Borne haute de la mémoire du tampon : `somme des limites d'instances × asr_buffer_limit_bytes`
+  (≈ 1 Mo par flux au plafond de 30 s).
 
   `docker compose --profile monitoring up` lance Prometheus (http://localhost:9090), configuré dans
   [monitoring/prometheus.yml](monitoring/prometheus.yml). Exemple p95 par instance :
