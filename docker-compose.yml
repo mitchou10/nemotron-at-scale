@@ -1,4 +1,4 @@
-# Docker Compose for nemotron-backend
+# Docker Compose for nemotron (run from the repository root; config comes from ./.env)
 # Usage:
 #   Development:  docker compose --profile dev up
 #   Production:   docker compose up
@@ -12,6 +12,8 @@
 #   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2
 #   Status: GET /api/v1/asr/instances
 #   Metrics: GET /metrics (Prometheus); UI with --profile monitoring on http://localhost:9090
+
+name: nemotron
 
 services:
   db:
@@ -34,7 +36,7 @@ services:
 
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: nemotron-backend
     restart: unless-stopped
@@ -59,7 +61,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./backend/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
 
   asr-model:
@@ -147,7 +149,7 @@ services:
   backend-dev:
     profiles: ["dev"]
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.dev
     container_name: nemotron-backend-dev
     env_file:
@@ -155,7 +157,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy

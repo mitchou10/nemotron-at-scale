@@ -48,10 +48,8 @@ backend/
 │   ├── test_health.py
 │   └── test_audio_ws.py
 ├── monitoring/prometheus.yml  # Scrape des métriques de la gateway
-├── .env.example
 ├── .gitignore
 ├── alembic.ini
-├── docker-compose.yml
 ├── Dockerfile             # Production (multi-stage)
 ├── Dockerfile.dev         # Dev avec reload
 ├── pyproject.toml
@@ -62,8 +60,10 @@ backend/
 
 ### Avec Docker (recommandé)
 
+Le `docker-compose.yml` et le `.env.example` sont à la **racine du dépôt** ; tout se lance depuis là :
+
 ```bash
-# Copier la config
+# Copier la config (variables lues par le compose et par le backend)
 cp .env.example .env
 
 # Mode dev (avec hot-reload)
