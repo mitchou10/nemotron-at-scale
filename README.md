@@ -156,13 +156,15 @@ fichiers), `make lint`, `make test`, `make gitleaks` (recherche de secrets dans 
 
 ## CI/CD et releases
 
-Tout est dans ce dépôt (`.github/`), sans dépendre d'un autre dépôt de workflows.
+Les workflows réutilisables viennent de [Mitchou10/github-workflow](https://github.com/Mitchou10/github-workflow)
+(épinglés sur `@v0`) ; seuls `unit-tests.yml` et la configuration des releases sont propres à ce dépôt.
+Le dépôt `github-workflow` doit être public, ou autoriser ce dépôt (Settings > Actions > General > Access).
 
 | Workflow | Déclencheur | Rôle |
 |---|---|---|
-| `ci.yml` | pull request | messages de commit (Conventional Commits), ruff, tests, recherche de secrets (gitleaks), scan de configuration (Trivy), build de chaque image modifiée + scan de vulnérabilités ; le job **Check jobs status** regroupe tout |
-| `lint.yml`, `unit-tests.yml` | appelés par `ci.yml` | ruff et pytest sur `backend/` et `vosk_service/` |
-| `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR quand une release est créée |
+| `ci.yml` | pull request | messages de commit (Conventional Commits), ruff, tests, recherche de secrets (gitleaks), scan de configuration (Trivy), build de chaque image modifiée (sans publication) ; les jobs sont filtrés par dossier modifié ; le job **Check jobs status** regroupe tout |
+| `unit-tests.yml` | appelé par `ci.yml` | pytest sur `backend/` et `vosk_service/` |
+| `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR et scan Trivy des images publiées (rapport seul) quand une release est créée |
 
 **Flux de release** (release-please) : les commits suivent les
 [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `perf:`, `refactor:`,
