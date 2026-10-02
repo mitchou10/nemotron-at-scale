@@ -1,6 +1,6 @@
 [project]
 name = "nemotron-backend"
-version = "0.3.0"
+version = "0.2.0-rc.1"
 description = "Nemotron at scale - FastAPI backend"
 readme = "README.md"
 requires-python = ">=3.11"
