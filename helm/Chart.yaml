@@ -1,8 +1,8 @@
 apiVersion: v2
 name: nemotron
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 description: Live speech transcription gateway (FastAPI backend) with its Vosk ASR service.
 # Floor set by the core APIs the chart renders (autoscaling/v2, policy/v1). The Gateway API
 # resources additionally need the gateway.networking.k8s.io CRDs installed in the cluster.
