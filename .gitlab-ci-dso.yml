@@ -15,6 +15,8 @@ default:
 variables:
   TAG: "${CI_COMMIT_REF_SLUG}"
   REGISTRY_URL: "${REGISTRY_HOST}/${PROJECT_PATH}"
+  # Images are pushed as ${REGISTRY_URL}/${PROJECT_NAME}/<image>:<tag>
+  PROJECT_NAME: "nemotron-at-scale"
   # The chart lives at the repository root (helm/Chart.yaml), not nested under a
   # charts/ parent - so CHARTS_DIR is "." (one level up from the chart itself),
   # same convention as CHARTS_DIR: ./charts pointing at charts/<name>/Chart.yaml
@@ -59,11 +61,11 @@ docker-build-backend:
         echo "Error: Could not extract appVersion from helm/Chart.yaml"
         exit 1
       fi
-      TAGS="nemotron-backend:$SHORT_SHA"
-      TAGS="$TAGS nemotron-backend:$CI_COMMIT_REF_SLUG"
-      TAGS="$TAGS nemotron-backend:$APP_VERSION"
+      TAGS="$PROJECT_NAME/backend:$SHORT_SHA"
+      TAGS="$TAGS $PROJECT_NAME/backend:$CI_COMMIT_REF_SLUG"
+      TAGS="$TAGS $PROJECT_NAME/backend:$APP_VERSION"
       if echo "$APP_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-        TAGS="$TAGS nemotron-backend:latest"
+        TAGS="$TAGS $PROJECT_NAME/backend:latest"
       fi
       export IMAGE_NAMES="$TAGS"
       echo "Building with tags: $IMAGE_NAMES"
@@ -86,11 +88,11 @@ docker-build-vosk-service:
         echo "Error: Could not extract appVersion from helm/Chart.yaml"
         exit 1
       fi
-      TAGS="nemotron-vosk-service:$SHORT_SHA"
-      TAGS="$TAGS nemotron-vosk-service:$CI_COMMIT_REF_SLUG"
-      TAGS="$TAGS nemotron-vosk-service:$APP_VERSION"
+      TAGS="$PROJECT_NAME/vosk-service:$SHORT_SHA"
+      TAGS="$TAGS $PROJECT_NAME/vosk-service:$CI_COMMIT_REF_SLUG"
+      TAGS="$TAGS $PROJECT_NAME/vosk-service:$APP_VERSION"
       if echo "$APP_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-        TAGS="$TAGS nemotron-vosk-service:latest"
+        TAGS="$TAGS $PROJECT_NAME/vosk-service:latest"
       fi
       export IMAGE_NAMES="$TAGS"
       echo "Building with tags: $IMAGE_NAMES"
@@ -113,11 +115,11 @@ docker-build-tts-service:
         echo "Error: Could not extract appVersion from helm/Chart.yaml"
         exit 1
       fi
-      TAGS="nemotron-tts-service:$SHORT_SHA"
-      TAGS="$TAGS nemotron-tts-service:$CI_COMMIT_REF_SLUG"
-      TAGS="$TAGS nemotron-tts-service:$APP_VERSION"
+      TAGS="$PROJECT_NAME/tts-service:$SHORT_SHA"
+      TAGS="$TAGS $PROJECT_NAME/tts-service:$CI_COMMIT_REF_SLUG"
+      TAGS="$TAGS $PROJECT_NAME/tts-service:$APP_VERSION"
       if echo "$APP_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-        TAGS="$TAGS nemotron-tts-service:latest"
+        TAGS="$TAGS $PROJECT_NAME/tts-service:latest"
       fi
       export IMAGE_NAMES="$TAGS"
       echo "Building with tags: $IMAGE_NAMES"
@@ -140,11 +142,11 @@ docker-build-frontend:
         echo "Error: Could not extract appVersion from helm/Chart.yaml"
         exit 1
       fi
-      TAGS="nemotron-frontend:$SHORT_SHA"
-      TAGS="$TAGS nemotron-frontend:$CI_COMMIT_REF_SLUG"
-      TAGS="$TAGS nemotron-frontend:$APP_VERSION"
+      TAGS="$PROJECT_NAME/frontend:$SHORT_SHA"
+      TAGS="$TAGS $PROJECT_NAME/frontend:$CI_COMMIT_REF_SLUG"
+      TAGS="$TAGS $PROJECT_NAME/frontend:$APP_VERSION"
       if echo "$APP_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-        TAGS="$TAGS nemotron-frontend:latest"
+        TAGS="$TAGS $PROJECT_NAME/frontend:latest"
       fi
       export IMAGE_NAMES="$TAGS"
       echo "Building with tags: $IMAGE_NAMES"
