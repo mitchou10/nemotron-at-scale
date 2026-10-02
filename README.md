@@ -192,7 +192,8 @@ helm upgrade --install nemotron ./helm -f helm/values/common-values.yaml -n nemo
 kubectl -n nemotron port-forward svc/nemotron-frontend 3000:80    # http://localhost:3000
 ```
 
-Les images viennent de `ghcr.io` : rendez les packages publics ou ajoutez un `imagePullSecret` (voir l'en-tête du fichier).
+L'environnement DSO « dev » (hôte et `ENVIRONMENT`) est dans `helm/values/dev-values.yaml`, à ajouter avec un second
+`-f`. Les images viennent de `ghcr.io` : rendez les packages publics ou ajoutez un `imagePullSecret` (voir l'en-tête du fichier).
 À chaque release, `cd.yml` met à jour `appVersion` et `version` du chart (commit direct sur la branche), puis
 publie le chart en OCI sur GHCR. `ci/configs/ct.yaml` configure le lint (chart-testing + helm-docs).
 
