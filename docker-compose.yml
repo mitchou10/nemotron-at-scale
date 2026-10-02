@@ -12,6 +12,8 @@
 #     VOSK_MODEL_NAME picks the model/language (default: vosk-model-small-fr-0.22)
 #   Any mix works, e.g. --profile cpu --profile vosk: the gateway fills instances in ASR_URL order
 #   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2   /   --scale asr-vosk=4
+#   Text to speech (Piper, OpenAI-compatible): --profile tts, then set TTS_ENABLED=true in .env
+#     POST http://localhost:8081/v1/audio/speech (service) or /api/v1/audio/speech (backend relay)
 #   Status: GET /api/v1/asr/instances
 #   Metrics: GET /metrics (Prometheus); UI with --profile monitoring on http://localhost:9090
 
@@ -151,6 +153,30 @@ services:
           cpus: "${VOSK_CPUS:-4}"
           memory: ${VOSK_MEMORY:-2g}
 
+  # Text to speech (Piper, OpenAI-compatible): docker compose --profile tts up
+  # Voices (TTS_VOICES, comma-separated) are downloaded once into the tts_voices volume.
+  tts:
+    profiles: ["tts"]
+    image: tts-service:latest
+    build:
+      context: ./tts_service
+    container_name: nemotron-tts
+    restart: unless-stopped
+    environment:
+      TTS_VOICES: ${TTS_VOICES:-fr_FR-siwis-medium}
+      TTS_MAX_REQUESTS: ${TTS_MAX_REQUESTS:-}
+      TTS_API_KEY: ${TTS_API_KEY:-}
+    ports:
+      - "${TTS_PORT:-8081}:8080"
+    volumes:
+      - tts_voices:/voices
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+
   asr-gpu:
     profiles: ["gpu"]
     image: nemo-speech-runtime:gpu
@@ -214,5 +240,6 @@ services:
 volumes:
   postgres_data:
   vosk_models:
+  tts_voices:
   asr_models:
   prometheus_data:
