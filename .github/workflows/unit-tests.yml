@@ -6,6 +6,10 @@ name: Unit Tests
 on:
   workflow_call:
     inputs:
+      PROJECT:
+        description: Project to test (backend or vosk_service)
+        required: true
+        type: string
       PYTHON_VERSION:
         description: Python version used to run the tests
         required: false
@@ -13,6 +17,10 @@ on:
         default: "3.12"
   workflow_dispatch:
     inputs:
+      PROJECT:
+        description: Project to test (backend or vosk_service)
+        required: true
+        type: string
       PYTHON_VERSION:
         description: Python version used to run the tests
         required: false
@@ -21,16 +29,10 @@ on:
 
 jobs:
   unit-tests:
-    name: Tests ${{ matrix.project }}
+    name: Tests ${{ inputs.PROJECT }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - backend
-          - vosk_service
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,12 +42,12 @@ jobs:
         with:
           python-version: ${{ inputs.PYTHON_VERSION || '3.12' }}
           enable-cache: true
-          cache-dependency-glob: ${{ matrix.project }}/uv.lock
+          cache-dependency-glob: ${{ inputs.PROJECT }}/uv.lock
 
       - name: Install dependencies
-        working-directory: ${{ matrix.project }}
+        working-directory: ${{ inputs.PROJECT }}
         run: uv sync --extra dev
 
       - name: Run tests
-        working-directory: ${{ matrix.project }}
+        working-directory: ${{ inputs.PROJECT }}
         run: uv run pytest

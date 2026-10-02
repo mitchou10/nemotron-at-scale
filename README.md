@@ -207,9 +207,9 @@ commits ; `.gitleaks.toml` et `.trivyignore.yaml` portent les exceptions (avec l
 - *Branches* : protéger `main` et exiger le check **Check jobs status** ;
 - *Packages* : rendre les images publiques si besoin (elles naissent privées).
 
-**Pré-releases (optionnel, désactivé)** : sur le modèle de Muffin, une branche `dev` peut publier des
-release candidates (`X.Y.Z-rc.N`). Pour l'activer : créer la branche `dev` et définir la variable de dépôt
-`ENABLE_PRERELEASE=true` (Settings > Secrets and variables > Actions > Variables). Non exercé pour l'instant.
+**Pré-releases** : la branche `dev` existe toujours et publie des release candidates (`X.Y.Z-rc.N`) ;
+`main` publie les versions stables. Après chaque release, `dev` est recréée depuis `main` si elle manque,
+sinon rebasée dessus (job `sync-prerelease-branch`).
 
 Sans GitHub App, la pull request de release ne relance pas la CI sur son propre commit : ajoute les
 secrets `APP_CLIENT_ID` et `APP_PRIVATE_KEY` pour que ce soit le cas.

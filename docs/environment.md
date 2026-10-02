@@ -124,7 +124,6 @@ Pour ajouter une clé ASR : `ASR_API_KEY` côté backend et `VOSK_API_KEY` côt�
 
 | Nom | Type | Où | Rôle |
 |---|---|---|---|
-| `ENABLE_PRERELEASE` | variable | GitHub, Settings > Actions > Variables | `true` : active la branche `dev` et les release candidates. |
 | `APP_CLIENT_ID`, `APP_PRIVATE_KEY` | secrets | GitHub | GitHub App facultative : la pull request de release déclenche alors la CI, et `bump-chart` peut pousser sur une branche protégée. |
 | `CATALOG_PATH` | variable | GitLab | Projet du catalogue de templates CI (Vault, Kaniko, Helm). |
 | `REGISTRY_HOST`, `PROJECT_PATH` | variables | GitLab | Registre et chemin des images : `REGISTRY_URL` = `REGISTRY_HOST/PROJECT_PATH`. |

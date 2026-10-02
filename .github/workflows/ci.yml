@@ -80,12 +80,25 @@ jobs:
       CHARTS_DIR: helm
       HELM_DOCS_VERSION: v1.14.2
 
-  unit-tests:
+  unit-tests-backend:
+    name: Tests backend
     needs: paths
-    if: ${{ needs.paths.outputs.any == 'true' }}
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'backend') }}
     uses: ./.github/workflows/unit-tests.yml
     permissions:
       contents: read
+    with:
+      PROJECT: backend
+
+  unit-tests-vosk-service:
+    name: Tests vosk_service
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'vosk_service') }}
+    uses: ./.github/workflows/unit-tests.yml
+    permissions:
+      contents: read
+    with:
+      PROJECT: vosk_service
 
   scan-gitleaks:
     name: Scan for leaked secrets
@@ -150,7 +163,8 @@ jobs:
       - lint-backend
       - lint-vosk-service
       - lint-helm
-      - unit-tests
+      - unit-tests-backend
+      - unit-tests-vosk-service
       - scan-gitleaks
       - scan-trivy-conf
       - build-backend

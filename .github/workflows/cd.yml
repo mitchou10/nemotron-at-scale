@@ -6,9 +6,8 @@ name: CD
 #   push to main  -> release-please opens/updates a "chore(main): release X.Y.Z" pull request;
 #                    merging it tags the release, updates CHANGELOG.md and the versions in the
 #                    pyproject.toml files, then builds and pushes the images to GHCR.
-#   push to dev   -> same flow for release candidates (X.Y.Z-rc.N), only when the repository
-#                    variable ENABLE_PRERELEASE is "true" (Settings > Secrets and variables > Actions >
-#                    Variables) and a `dev` branch exists. Off by default: main is the only branch.
+#   push to dev   -> same flow for release candidates (X.Y.Z-rc.N). The `dev` branch always exists:
+#                    after each release it is created from main if missing, or rebased on main.
 #
 # One-time repository setup (Settings > Actions > General): allow "Read and write permissions" and
 # tick "Allow GitHub Actions to create and approve pull requests", or release-please cannot open its
@@ -30,15 +29,13 @@ concurrency:
 jobs:
   release:
     name: Release
-    # Keep the branch name equal to RELEASE_BRANCH; `dev` only when the prerelease flow is enabled.
-    if: ${{ github.ref_name == 'main' || vars.ENABLE_PRERELEASE == 'true' }}
     uses: Mitchou10/github-workflow/.github/workflows/release-please.yml@v0
     permissions:
       contents: write
       issues: write
       pull-requests: write
     with:
-      ENABLE_PRERELEASE: ${{ vars.ENABLE_PRERELEASE == 'true' }}
+      ENABLE_PRERELEASE: true
       RELEASE_CONFIG_FILE: .github/releases/release-please-config-release.json
       RELEASE_MANIFEST_FILE: .github/releases/.release-please-manifest.json
       PRERELEASE_CONFIG_FILE: .github/releases/release-please-config-prerelease.json
@@ -155,13 +152,13 @@ jobs:
 
   # Last on purpose: a release lands commits on main (release-please's, and bump-chart's) that dev does
   # not have yet, and dev computes its next release candidate from that base. Only the jobs that commit
-  # are in `needs`: a failed build or publish must not leave dev stale. Only with the prerelease flow.
+  # are in `needs`: a failed build or publish must not leave dev stale.
   sync-prerelease-branch:
     name: Sync prerelease branch
     needs:
       - release
       - bump-chart
-    if: ${{ vars.ENABLE_PRERELEASE == 'true' && github.ref_name == 'main' && needs.release.outputs.release-created == 'true' }}
+    if: ${{ github.ref_name == 'main' && needs.release.outputs.release-created == 'true' }}
     uses: Mitchou10/github-workflow/.github/workflows/sync-prerelease-branch.yml@v0
     permissions:
       contents: write
