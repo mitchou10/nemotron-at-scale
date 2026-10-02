@@ -21,12 +21,14 @@ keywords:
   - asr
   - transcription
   - vosk
-dependencies: []
-# - name: cnpg-cluster
-#   alias: cnpg
-#   version: 1.5.2
-#   repository: https://this-is-tobi.github.io/helm-charts
-#   condition: cnpg.enabled
+dependencies:
+  # CloudNativePG PostgreSQL cluster, off by default (cnpg.enabled): used by the environments that
+  # need a real database, see values/dev-values.yaml.
+  - name: cluster
+    alias: cnpg
+    version: 0.8.1
+    repository: https://cloudnative-pg.github.io/charts
+    condition: cnpg.enabled
 sources:
   - https://github.com/mitchou10/nemotron-at-scale
 maintainers:
