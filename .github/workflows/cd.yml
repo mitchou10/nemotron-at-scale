@@ -118,13 +118,49 @@ jobs:
       SECURITY_TAB: true
       CATEGORY: trivy-image-${{ matrix.service }}
 
-  # Last on purpose: a release lands commits on main that dev does not have yet, and dev computes its
-  # next release candidate from that base. Only when the prerelease flow is enabled.
+  # The chart ships with the code: the bump (appVersion = released version, chart version on its own
+  # line, helm-docs README) is committed straight onto the branch, not through a pull request.
+  bump-chart:
+    name: Bump chart
+    needs:
+      - release
+      - build-docker
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    uses: dnum-mi/fabnum-cicd/.github/workflows/update-helm-chart.yml@v0
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      RUN_MODE: local
+      CHART_DIR: ./
+      CHART_NAME: helm
+      APP_VERSION: ${{ needs.release.outputs.version }}
+
+  # Package the exact commit bump-chart just pushed and push it to GHCR as an OCI artifact.
+  release-chart:
+    name: Release chart
+    needs:
+      - release
+      - build-docker
+      - bump-chart
+    if: ${{ needs.release.outputs.release-created == 'true' }}
+    uses: dnum-mi/fabnum-cicd/.github/workflows/release-helm-local.yml@v0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      CHARTS_DIR: ./
+      CHART_NAME: helm
+      CHECKOUT_REF: ${{ needs.bump-chart.outputs.commit-sha }}
+
+  # Last on purpose: a release lands commits on main (release-please's, and bump-chart's) that dev does
+  # not have yet, and dev computes its next release candidate from that base. Only the jobs that commit
+  # are in `needs`: a failed build or publish must not leave dev stale. Only with the prerelease flow.
   sync-prerelease-branch:
     name: Sync prerelease branch
     needs:
       - release
-      - build-docker
+      - bump-chart
     if: ${{ vars.ENABLE_PRERELEASE == 'true' && github.ref_name == 'main' && needs.release.outputs.release-created == 'true' }}
     uses: Mitchou10/github-workflow/.github/workflows/sync-prerelease-branch.yml@v0
     permissions:

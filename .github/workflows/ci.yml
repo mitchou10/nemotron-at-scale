@@ -32,6 +32,9 @@ jobs:
           - 'backend/**'
         vosk_service:
           - 'vosk_service/**'
+        helm:
+          - 'helm/**'
+          - 'ci/configs/ct.yaml'
         ci:
           - '.github/workflows/**'
           - '.github/releases/**'
@@ -63,6 +66,19 @@ jobs:
       contents: read
     with:
       WORKING_DIRECTORY: vosk_service
+
+  # Chart lint (chart-testing + helm-docs), same shared workflow as the Muffin project.
+  lint-helm:
+    name: Lint Helm chart
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'helm') }}
+    uses: dnum-mi/fabnum-cicd/.github/workflows/lint-helm.yml@v0
+    permissions:
+      contents: read
+    with:
+      CT_CONF_PATH: ci/configs/ct.yaml
+      CHARTS_DIR: helm
+      HELM_DOCS_VERSION: v1.14.2
 
   unit-tests:
     needs: paths
@@ -133,6 +149,7 @@ jobs:
       - lint-commits
       - lint-backend
       - lint-vosk-service
+      - lint-helm
       - unit-tests
       - scan-gitleaks
       - scan-trivy-conf
