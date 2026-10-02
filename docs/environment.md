@@ -92,6 +92,7 @@ Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
 |---|---|---|
 | `DB_PORT` | `5432` | Port PostgreSQL publié sur l'hôte. |
 | `BACKEND_PORT` | `8000` | Port du backend publié sur l'hôte. |
+| `FRONTEND_PORT` | `3000` | Port de la page de statut publié sur l'hôte. |
 | `PROMETHEUS_PORT` | `9090` | Port de Prometheus (profil `monitoring`). |
 | `ASR_MODEL_FILE` | `nemotron-speech-streaming-en-0.6b.q8_0.gguf` | Fichier du modèle NeMo. |
 | `ASR_MODEL_URL` | Hugging Face (révision figée) | D'où `asr-model` télécharge le modèle NeMo. |
@@ -99,6 +100,12 @@ Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
 | `NEMO_SPEECH_REF` | `main` | Branche ou tag de NeMo-Speech.cpp à construire. |
 | `VOSK_CPUS` | `4` | Limite CPU du conteneur Vosk (dont dépend la limite de flux). |
 | `VOSK_MEMORY` | `2g` | Limite mémoire du conteneur Vosk. |
+
+## Frontend (nginx)
+
+| Variable | Défaut | Description |
+|---|---|---|
+| `BACKEND_URL` | `http://backend:8000` | Adresse du backend vers laquelle nginx proxifie `/api/`. Résolue à chaque requête : le frontend démarre même si le backend n'est pas encore là. |
 
 ## Helm
 
@@ -109,6 +116,7 @@ Le chart ([helm/values.yaml](../helm/values.yaml)) fournit les variables ainsi :
 | `backend.envCm` | Configuration non secrète du backend (`APP_*`, `ASR_*`). Les valeurs sont passées à `tpl` : `ASR_URL` pointe vers le service Vosk du release. |
 | `backend.env.DATABASE_URL` | Lue depuis le secret Kubernetes `nemotron-database`, clé `url`, **à créer avant l'installation**. |
 | `vosk.envCm` | Configuration de Vosk (`VOSK_*`). |
+| `frontend.envCm` | `BACKEND_URL`, calculé vers le Service backend du release. |
 | `vosk.resources` | Limites CPU et mémoire ; la limite de flux en dérive. |
 
 ```bash

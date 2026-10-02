@@ -32,6 +32,8 @@ jobs:
           - 'backend/**'
         vosk_service:
           - 'vosk_service/**'
+        frontend:
+          - 'frontend/**'
         helm:
           - 'helm/**'
           - 'ci/configs/ct.yaml'
@@ -153,6 +155,20 @@ jobs:
       TARGET: runtime
       PUSH: false
 
+  build-frontend:
+    name: Build frontend
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'frontend') }}
+    uses: Mitchou10/github-workflow/.github/workflows/build-docker.yml@v0
+    permissions:
+      contents: read
+    with:
+      IMAGE_NAME: local/frontend
+      IMAGE_TAG: ci
+      CONTEXT: frontend
+      TARGET: runtime
+      PUSH: false
+
   # Mark only this job as required in the branch protection.
   all-jobs-passed:
     name: Check jobs status
@@ -169,6 +185,7 @@ jobs:
       - scan-trivy-conf
       - build-backend
       - build-vosk-service
+      - build-frontend
     uses: Mitchou10/github-workflow/.github/workflows/status-gate.yml@v0
     with:
       NEEDS: ${{ toJSON(needs) }}

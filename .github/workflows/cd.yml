@@ -77,6 +77,9 @@ jobs:
           - name: vosk-service
             context: vosk_service
             dockerfile: vosk_service/Dockerfile
+          - name: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
     uses: Mitchou10/github-workflow/.github/workflows/build-docker.yml@v0
     permissions:
       contents: read
@@ -103,6 +106,7 @@ jobs:
         service:
           - backend
           - vosk-service
+          - frontend
     uses: Mitchou10/github-workflow/.github/workflows/scan-trivy.yml@v0
     permissions:
       contents: read
