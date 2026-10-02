@@ -154,7 +154,8 @@ services:
           memory: ${VOSK_MEMORY:-2g}
 
   # Text to speech (Piper, OpenAI-compatible): docker compose --profile tts up
-  # Voices (TTS_VOICES, comma-separated) are downloaded once into the tts_voices volume.
+  # The image ships fr_FR-siwis-medium. Other voices (TTS_VOICES, comma-separated) are downloaded once
+  # into the tts_voices volume (a new volume starts with the voices of the image).
   tts:
     profiles: ["tts"]
     image: tts-service:latest
