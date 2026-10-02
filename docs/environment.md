@@ -103,9 +103,9 @@ même des deux côtés (backend et service).
 | Variable | Défaut | Description |
 |---|---|---|
 | `TTS_HOST` / `TTS_PORT` | `0.0.0.0` / `8080` | Adresse d'écoute. |
-| `TTS_VOICES` | `fr_FR-siwis-medium` | Voix Piper, séparées par des virgules (la première est la voix par défaut). Téléchargées au premier démarrage. |
-| `TTS_VOICE_DIR` | `/voices` | Dossier des voix. À monter sur un volume pour ne pas les retélécharger. |
-| `TTS_VOICE_URL` | `https://huggingface.co/rhasspy/piper-voices/resolve/main` | Origine des voix (miroir interne possible). |
+| `TTS_VOICES` | `fr_FR-siwis-medium` | Voix Piper, séparées par des virgules (la première est la voix par défaut). L'image embarque `fr_FR-siwis-medium` (argument de build `TTS_VOICES`) ; les autres sont téléchargées au premier démarrage si `/voices` est inscriptible. |
+| `TTS_VOICE_DIR` | `/voices` | Dossier des voix (celles de l'image y sont déjà). |
+| `TTS_VOICE_URL` | `https://huggingface.co/rhasspy/piper-voices/resolve/main` | Origine des voix, au build comme au démarrage (miroir interne possible). |
 | `TTS_MAX_REQUESTS` | CPU | Synthèses simultanées ; `429` au-delà. |
 | `TTS_MAX_INPUT_CHARS` | `4096` | Taille maximale du texte (limite d'OpenAI). |
 | `TTS_MP3_BITRATE` | `128` | Débit du MP3, en kbit/s. |

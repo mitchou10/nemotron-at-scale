@@ -50,3 +50,13 @@ def ensure_voice(settings: Settings, voice: str) -> Path:
         Path(part.name).replace(target)
     logger.info("voice %s ready in %s", voice, root)
     return model
+
+
+if __name__ == "__main__":
+    # Image build: `python -m app.voices` downloads the TTS_VOICES into TTS_VOICE_DIR.
+    from app.config import get_settings
+
+    logging.basicConfig(level=logging.INFO)
+    _settings = get_settings()
+    for _voice in _settings.voices:
+        ensure_voice(_settings, _voice)
