@@ -1236,6 +1236,10 @@ extraObjects: {}
 #       name: foo
 #       type: "Opaque"
 ## Additional services comming from dependencies can be configured below.
+cnpg:
+  # -- Deploy a CloudNativePG PostgreSQL cluster with the chart (see `values/dev-values.yaml`).
+  # @section -- Database
+  enabled: false
 ## Ref: https://artifacthub.io/packages/helm/this-is-tobi-helm-charts/cnpg-cluster
 # cnpg:
 #   enabled: false

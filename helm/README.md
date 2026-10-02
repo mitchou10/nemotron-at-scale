@@ -8,6 +8,10 @@ Live speech transcription gateway (FastAPI backend) with its Vosk ASR service.
 
 Kubernetes: `>=1.25.0-0`
 
+| Repository | Name | Version |
+|------------|------|---------|
+| https://cloudnative-pg.github.io/charts | cnpg(cluster) | 0.8.1 |
+
 ## Values
 
 ### General
@@ -266,6 +270,14 @@ Kubernetes: `>=1.25.0-0`
 | backend.strategy.rollingUpdate.maxSurge | int | `1` | The maximum number of pods that can be scheduled above the desired number of pods. |
 | backend.strategy.rollingUpdate.maxUnavailable | int | `1` | The maximum number of pods that can be unavailable during the update process. |
 | backend.strategy.type | string | `"RollingUpdate"` | Strategy type used to replace old Pods by new ones, can be `Recreate` or `RollingUpdate`. Only applied when `deploymentType` is "Deployment". |
+
+### Cnpg
+
+#### General
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| cnpg.enabled | bool | `false` | Deploy a CloudNativePG PostgreSQL cluster with the chart (see `values/dev-values.yaml`). |
 
 ### Frontend
 
