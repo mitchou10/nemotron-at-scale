@@ -198,10 +198,10 @@ La fusionner crée le tag et la release GitHub, met à jour `CHANGELOG.md` et la
 `pyproject.toml`, puis publie les images :
 
 ```
-ghcr.io/mitchou10/nemotron-at-scale-backend:<version>        (+ :latest)
-ghcr.io/mitchou10/nemotron-at-scale-vosk-service:<version>   (+ :latest)
-ghcr.io/mitchou10/nemotron-at-scale-tts-service:<version>    (+ :latest)
-ghcr.io/mitchou10/nemotron-at-scale-frontend:<version>       (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale/backend:<version>       (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale/vosk-service:<version>  (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale/tts-service:<version>   (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale/frontend:<version>      (+ :latest)
 ```
 
 Configuration : `.github/releases/` (versions de départ dans les manifestes, sections du changelog).

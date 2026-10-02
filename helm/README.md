@@ -130,7 +130,7 @@ Kubernetes: `>=1.25.0-0`
 | backend.image.digest | string | `""` | Image digest (`sha256:...`). When set it takes precedence over `tag`, pinning the exact image content so the same release can never resolve to a different build - preferred over a mutable tag for anything you deploy to production. |
 | backend.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy for the app. |
 | backend.image.registry | string | `"ghcr.io"` | Registry to use for the app. |
-| backend.image.repository | string | `"mitchou10/nemotron-at-scale-backend"` | Repository to use for the app. |
+| backend.image.repository | string | `"mitchou10/nemotron-at-scale/backend"` | Repository to use for the app. |
 | backend.image.tag | string | `""` | Tag to use for the app. Overrides the image tag whose default is the chart appVersion. |
 
 #### Ingress
@@ -352,7 +352,7 @@ Kubernetes: `>=1.25.0-0`
 | frontend.image.digest | string | `""` | Image digest (`sha256:...`). When set it takes precedence over `tag`, pinning the exact image content so the same release can never resolve to a different build - preferred over a mutable tag for anything you deploy to production. |
 | frontend.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy for the app. |
 | frontend.image.registry | string | `"ghcr.io"` | Registry to use for the app. |
-| frontend.image.repository | string | `"mitchou10/nemotron-at-scale-frontend"` | Repository to use for the app. |
+| frontend.image.repository | string | `"mitchou10/nemotron-at-scale/frontend"` | Repository to use for the app. |
 | frontend.image.tag | string | `""` | Tag to use for the app. Overrides the image tag whose default is the chart appVersion. |
 
 #### Ingress
@@ -588,7 +588,7 @@ Kubernetes: `>=1.25.0-0`
 | tts.image.digest | string | `""` | Image digest (`sha256:...`). When set it takes precedence over `tag`, pinning the exact image content so the same release can never resolve to a different build - preferred over a mutable tag for anything you deploy to production. |
 | tts.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy for the app. |
 | tts.image.registry | string | `"ghcr.io"` | Registry to use for the app. |
-| tts.image.repository | string | `"mitchou10/nemotron-at-scale-tts-service"` | Repository to use for the app. |
+| tts.image.repository | string | `"mitchou10/nemotron-at-scale/tts-service"` | Repository to use for the app. |
 | tts.image.tag | string | `""` | Tag to use for the app. Overrides the image tag whose default is the chart appVersion. |
 
 #### Ingress
@@ -810,7 +810,7 @@ Kubernetes: `>=1.25.0-0`
 | vosk.image.digest | string | `""` | Image digest (`sha256:...`). When set it takes precedence over `tag`, pinning the exact image content so the same release can never resolve to a different build - preferred over a mutable tag for anything you deploy to production. |
 | vosk.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy for the app. |
 | vosk.image.registry | string | `"ghcr.io"` | Registry to use for the app. |
-| vosk.image.repository | string | `"mitchou10/nemotron-at-scale-vosk-service"` | Repository to use for the app. |
+| vosk.image.repository | string | `"mitchou10/nemotron-at-scale/vosk-service"` | Repository to use for the app. |
 | vosk.image.tag | string | `""` | Tag to use for the app. Overrides the image tag whose default is the chart appVersion. |
 
 #### Ingress

@@ -236,7 +236,7 @@ backend:
     registry: "ghcr.io"
     # -- Repository to use for the app.
     # @section -- Backend
-    repository: "mitchou10/nemotron-at-scale-backend"
+    repository: "mitchou10/nemotron-at-scale/backend"
     # -- Image pull policy for the app.
     # @section -- Backend
     pullPolicy: "IfNotPresent"
@@ -1275,7 +1275,7 @@ vosk:
     registry: "ghcr.io"
     # -- Repository to use for the app.
     # @section -- Vosk
-    repository: "mitchou10/nemotron-at-scale-vosk-service"
+    repository: "mitchou10/nemotron-at-scale/vosk-service"
     # -- Image pull policy for the app.
     # @section -- Vosk
     pullPolicy: "IfNotPresent"
@@ -2118,7 +2118,7 @@ frontend:
     registry: "ghcr.io"
     # -- Repository to use for the app.
     # @section -- Frontend
-    repository: "mitchou10/nemotron-at-scale-frontend"
+    repository: "mitchou10/nemotron-at-scale/frontend"
     # -- Image pull policy for the app.
     # @section -- Frontend
     pullPolicy: "IfNotPresent"
@@ -2963,7 +2963,7 @@ tts:
     registry: "ghcr.io"
     # -- Repository to use for the app.
     # @section -- Tts
-    repository: "mitchou10/nemotron-at-scale-tts-service"
+    repository: "mitchou10/nemotron-at-scale/tts-service"
     # -- Image pull policy for the app.
     # @section -- Tts
     pullPolicy: "IfNotPresent"
