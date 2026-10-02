@@ -9,6 +9,15 @@ from starlette.testclient import TestClient
 
 from app.api.routes.audio import active_clients
 from app.main import app
+from app.services.registry import InMemoryRegistryStore
+
+
+@pytest.fixture(autouse=True)
+def registry() -> InMemoryRegistryStore:
+    """A fresh registry for every test (the app would otherwise use the database)."""
+    app.state.registry = InMemoryRegistryStore()
+    app.state.tts_pool = None
+    return app.state.registry  # type: ignore[no-any-return]
 
 
 @pytest_asyncio.fixture

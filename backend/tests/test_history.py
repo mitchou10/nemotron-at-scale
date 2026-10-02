@@ -12,7 +12,6 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.db import Base
 from app.main import app
-from app.services.discovery import StaticDiscovery, parse_endpoints
 from app.services.gateway import Gateway
 from app.services.history import summarize
 from app.services.state import (
@@ -24,6 +23,7 @@ from app.services.state import (
     utcnow,
 )
 from app.services.state_sql import SqlStateStore
+from tests.discovery_helpers import discovery_for
 
 
 @pytest_asyncio.fixture(params=["memory", "sql"])
@@ -104,8 +104,11 @@ def test_summarize_without_data() -> None:
 
 async def test_gateway_samples_once_per_interval() -> None:
     store = InMemoryStateStore()
-    endpoints = parse_endpoints("ws://a:8080/v1/audio/transcriptions/realtime", 4)
-    gateway = Gateway(StaticDiscovery(endpoints), store=store, history_interval=3600)
+    gateway = Gateway(
+        discovery_for("ws://a:8080/v1/audio/transcriptions/realtime", 4),
+        store=store,
+        history_interval=3600,
+    )
     gateway._client = None  # no probing in this test: instances stay unhealthy
     await gateway._discover()
     await gateway._record_history()
@@ -116,8 +119,11 @@ async def test_gateway_samples_once_per_interval() -> None:
 
 async def test_gateway_history_can_be_disabled() -> None:
     store = InMemoryStateStore()
-    endpoints = parse_endpoints("ws://a:8080/v1/audio/transcriptions/realtime", 4)
-    gateway = Gateway(StaticDiscovery(endpoints), store=store, history_interval=0)
+    gateway = Gateway(
+        discovery_for("ws://a:8080/v1/audio/transcriptions/realtime", 4),
+        store=store,
+        history_interval=0,
+    )
     await gateway._discover()
     await gateway._record_history()
     assert await store.list_samples(utcnow() - timedelta(hours=1)) == []

@@ -3,16 +3,20 @@
 #   Development:  docker compose --profile dev up
 #   Production:   docker compose up
 #
-# Live transcription runs in separate `nemo-speech serve` instances (NeMo-Speech.cpp).
-# The backend gateway resolves the service names in ASR_URL to every replica IP, measures
-# their latency and load, and routes each audio stream to the best one:
+# Live transcription runs in separate instances that REGISTER THEMSELVES in the backend
+# (PUT /api/v1/registry/instances/<id>, a heartbeat every 10 s, removed after 30 s of silence).
+# The backend gateway measures their latency and load and routes each audio stream to the best one.
+# `vosk_service` and `tts_service` register on their own; `nemo-speech serve` (NeMo-Speech.cpp) has no
+# such feature, so a small `*-registrar` service next to it does it with curl:
 #   CPU:  docker compose --profile cpu up --build
 #   GPU:  docker compose --profile gpu up --build     (NVIDIA container toolkit)
 #   Vosk (Kaldi, light CPU model, own service in ./vosk_service): --profile vosk
 #     VOSK_MODEL_NAME picks the model/language (default: vosk-model-small-fr-0.22)
-#   Any mix works, e.g. --profile cpu --profile vosk: the gateway fills instances in ASR_URL order
-#   More instances:  --scale asr-cpu=3   /   --scale asr-gpu=2   /   --scale asr-vosk=4
-#   Text to speech (Piper, OpenAI-compatible): --profile tts, then set TTS_ENABLED=true in .env
+#   Any mix works, e.g. --profile cpu --profile vosk: the gateway fills instances by priority (gpu, cpu, then vosk)
+#   More instances:  --scale asr-vosk=4  (each replica registers itself). A scaled nemo-speech service
+#     is registered as one instance under its service name: raise its limit with the registrar's
+#     `max_streams`.
+#   Text to speech (Piper, OpenAI-compatible): --profile tts (registers itself)
 #     POST http://localhost:8081/v1/audio/speech (service) or /api/v1/audio/speech (backend relay)
 #   Status: GET /api/v1/asr/instances
 #   Metrics: GET /metrics (Prometheus); UI with --profile monitoring on http://localhost:9090
@@ -131,6 +135,58 @@ services:
       start_period: 30s
       retries: 5
 
+  # Registers asr-cpu in the backend while it answers /ready, and unregisters when stopped.
+  asr-cpu-registrar:
+    profiles: ["cpu"]
+    image: curlimages/curl:8.10.1
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      REGISTRY_URL: http://backend:8000
+      REGISTRY_TOKEN: ${REGISTRY_TOKEN:-}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        id=asr-cpu
+        endpoint="$$REGISTRY_URL/api/v1/registry/instances/$$id"
+        auth="Authorization: Bearer $$REGISTRY_TOKEN"
+        trap 'curl -s -X DELETE -H "$$auth" "$$endpoint"; exit 0' TERM INT
+        while true; do
+          if curl -fs http://asr-cpu:8080/ready >/dev/null; then
+            curl -fsS -X PUT -H "$$auth" -H 'Content-Type: application/json' \
+              -d '{"kind": "nemo", "url": "ws://asr-cpu:8080/v1/audio/transcriptions/realtime", "max_streams": 4, "priority": 1}' \
+              "$$endpoint" >/dev/null || echo "registration failed"
+          fi
+          sleep 10 & wait $$!
+        done
+
+  # Registers asr-gpu in the backend while it answers /ready, and unregisters when stopped.
+  asr-gpu-registrar:
+    profiles: ["gpu"]
+    image: curlimages/curl:8.10.1
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      REGISTRY_URL: http://backend:8000
+      REGISTRY_TOKEN: ${REGISTRY_TOKEN:-}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        id=asr-gpu
+        endpoint="$$REGISTRY_URL/api/v1/registry/instances/$$id"
+        auth="Authorization: Bearer $$REGISTRY_TOKEN"
+        trap 'curl -s -X DELETE -H "$$auth" "$$endpoint"; exit 0' TERM INT
+        while true; do
+          if curl -fs http://asr-gpu:8080/ready >/dev/null; then
+            curl -fsS -X PUT -H "$$auth" -H 'Content-Type: application/json' \
+              -d '{"kind": "nemo", "url": "ws://asr-gpu:8080/v1/audio/transcriptions/realtime", "max_streams": 16, "priority": 0}' \
+              "$$endpoint" >/dev/null || echo "registration failed"
+          fi
+          sleep 10 & wait $$!
+        done
+
   asr-vosk:
     profiles: ["vosk"]
     image: vosk-service:latest
@@ -144,6 +200,9 @@ services:
       VOSK_STREAMS_PER_CPU: ${VOSK_STREAMS_PER_CPU:-3}
       VOSK_MAX_STREAMS: ${VOSK_MAX_STREAMS:-}
       VOSK_ENDPOINTING: ${VOSK_ENDPOINTING:-false}
+      VOSK_REGISTRY_URL: http://backend:8000
+      VOSK_REGISTRY_TOKEN: ${REGISTRY_TOKEN:-}
+      VOSK_REGISTRY_PRIORITY: 2
     volumes:
       - vosk_models:/models
     # The container is bounded, and the service sizes its limits from it
@@ -167,6 +226,8 @@ services:
       TTS_VOICES: ${TTS_VOICES:-fr_FR-siwis-medium}
       TTS_MAX_REQUESTS: ${TTS_MAX_REQUESTS:-}
       TTS_API_KEY: ${TTS_API_KEY:-}
+      TTS_REGISTRY_URL: http://backend:8000
+      TTS_REGISTRY_TOKEN: ${REGISTRY_TOKEN:-}
     ports:
       - "${TTS_PORT:-8081}:8080"
     volumes:

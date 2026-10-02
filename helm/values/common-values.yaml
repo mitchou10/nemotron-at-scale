@@ -1,0 +1,203 @@
+# Values to try the chart as is, on a local cluster (kind, minikube, k3d, Docker Desktop):
+#
+#   helm upgrade --install nemotron ./helm -f helm/values/common-values.yaml -n nemotron --create-namespace
+#   kubectl -n nemotron rollout status deploy/nemotron-backend
+#   kubectl -n nemotron port-forward svc/nemotron-frontend 3000:80    # status page: http://localhost:3000
+#   kubectl -n nemotron port-forward svc/nemotron-tts 8081:80         # TTS: http://localhost:8081
+#   or through the ingress below: http://nemotron.local (status page) and http://nemotron.local/api/ (API)
+#
+# It is self-contained: PostgreSQL and its credentials are created by `extraObjects` below, so no
+# Secret has to exist beforehand. THE DATABASE IS FOR TESTS ONLY (throwaway password, data lost with
+# the pod): in a real environment, remove `nemotron-db` and `nemotron-database` from `extraObjects`,
+# create the `nemotron-database` Secret yourself (key `url`) and point it to a managed PostgreSQL.
+#
+# Images are pulled from ghcr.io. They are private until the package is made public (GitHub >
+# Packages > the image > Package settings): then create a pull secret and uncomment `imagePullSecrets`
+#   kubectl -n nemotron create secret docker-registry ghcr-pull \
+#     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token with read:packages>
+
+# Predictable names: Services are nemotron-backend, nemotron-frontend, nemotron-tts, nemotron-vosk.
+fullnameOverride: nemotron
+
+global:
+  # imagePullSecrets:
+  #   - name: ghcr-pull
+  # One host for the whole release (needs an ingress controller; without one the resource is inert).
+  # /api/ goes to the backend (including the OpenAI-compatible POST /api/v1/audio/speech) and
+  # everything else to the status page. Add `127.0.0.1 nemotron.local` to /etc/hosts (or the
+  # address of your ingress controller), then open http://nemotron.local
+  ingress:
+    enabled: true
+    className: "nginx"
+    hosts:
+      - name: "nemotron.local"
+        paths:
+          - pathType: "Prefix"
+            path: "/api/"
+            backend:
+              serviceName: "nemotron-backend"
+              portNumber: 80
+          - pathType: "Prefix"
+            path: "/"
+            backend:
+              serviceName: "nemotron-frontend"
+              portNumber: 80
+
+backend:
+  replicaCount: 1
+  image:
+    pullPolicy: "IfNotPresent"
+  # Wait for PostgreSQL: the container runs the migrations as soon as it starts.
+  initContainers:
+    - name: wait-for-db
+      image: "docker.io/library/busybox:1.37"
+      command: ["sh", "-c", "until nc -z nemotron-db 5432; do echo 'waiting for nemotron-db'; sleep 2; done"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        runAsUser: 1000
+        capabilities:
+          drop: ["ALL"]
+  envCm:
+    APP_ENV: "production"
+    APP_DEBUG: "false"
+    APP_LOG_LEVEL: "info"
+    # Live transcription: the Vosk and TTS workers of this release register themselves in the backend
+    # (REGISTRY_URL is set by the chart); the token is the Secret `nemotron-registry` below.
+    ASR_ENABLED: "true"
+    ASR_STATE_STORE: "database"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+vosk:
+  image:
+    pullPolicy: "IfNotPresent"
+  envCm:
+    # The small French model is downloaded on first start (a few seconds, ~40 MB).
+    VOSK_MODEL_NAME: "vosk-model-small-fr-0.22"
+    # Stream limit = CPU limit x VOSK_STREAMS_PER_CPU
+    VOSK_STREAMS_PER_CPU: "3"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+tts:
+  image:
+    pullPolicy: "IfNotPresent"
+  # The image ships fr_FR-siwis-medium: nothing is downloaded at start.
+  envCm:
+    TTS_VOICES: "fr_FR-siwis-medium"
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+frontend:
+  image:
+    pullPolicy: "IfNotPresent"
+extraObjects:
+  # Token the workers register with (backend REGISTRY_TOKEN, VOSK_/TTS_REGISTRY_TOKEN). Throwaway.
+  nemotron-registry: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: nemotron-registry
+    type: Opaque
+    stringData:
+      token: "local-test-token"
+  # ---- PostgreSQL, FOR TESTS ONLY ----
+  nemotron-database: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: nemotron-database
+    type: Opaque
+    stringData:
+      url: "postgresql+asyncpg://nemotron:nemotron@nemotron-db:5432/nemotron"
+  nemotron-db-service: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: nemotron-db
+    spec:
+      selector:
+        app.kubernetes.io/name: nemotron-db
+      ports:
+        - name: postgres
+          port: 5432
+          targetPort: postgres
+  nemotron-db: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      name: nemotron-db
+    spec:
+      serviceName: nemotron-db
+      replicas: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: nemotron-db
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: nemotron-db
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: postgres
+              image: "docker.io/library/postgres:16-alpine"
+              ports:
+                - name: postgres
+                  containerPort: 5432
+              env:
+                - name: POSTGRES_USER
+                  value: nemotron
+                - name: POSTGRES_PASSWORD
+                  value: nemotron
+                - name: POSTGRES_DB
+                  value: nemotron
+                # A sub-directory: the volume root is not empty on some storage classes.
+                - name: PGDATA
+                  value: /var/lib/postgresql/data/pgdata
+              readinessProbe:
+                exec:
+                  command: ["pg_isready", "-U", "nemotron"]
+                periodSeconds: 5
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  memory: "512Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/postgresql/data
+                - name: run
+                  mountPath: /var/run/postgresql
+          volumes:
+            - name: data
+              emptyDir: {}
+            - name: run
+              emptyDir: {}

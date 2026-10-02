@@ -158,6 +158,7 @@ jobs:
       CHARTS_DIR: ./
       CHART_NAME: helm
       CHECKOUT_REF: ${{ needs.bump-chart.outputs.commit-sha }}
+      HELM_REPOS: cnpg=https://cloudnative-pg.github.io/charts
 
   # Last on purpose: a release lands commits on main (release-please's, and bump-chart's) that dev does
   # not have yet, and dev computes its next release candidate from that base. Only the jobs that commit

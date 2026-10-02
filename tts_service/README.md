@@ -60,6 +60,13 @@ with client.audio.speech.with_streaming_response.create(
     response.stream_to_file("bonjour.mp3")
 ```
 
+## Enregistrement dans le backend
+
+Avec `TTS_REGISTRY_URL` (et `TTS_REGISTRY_TOKEN`), le serveur s'**enregistre** auprès du backend une fois les voix
+chargées, envoie un heartbeat toutes les 10 s et se désenregistre à l'arrêt ; mort, il est retiré après le TTL du
+backend (30 s). Le backend, qui sert de gateway (`POST /api/v1/audio/speech`), envoie chaque requête à l'instance
+la moins chargée. Il annonce `TTS_SELF_URL` (par défaut l'IP du conteneur) et `TTS_MAX_REQUESTS`.
+
 ## Configuration
 
 Variables `TTS_*` (voir [docs/environment.md](../docs/environment.md)) : `TTS_VOICES`, `TTS_VOICE_DIR`,
