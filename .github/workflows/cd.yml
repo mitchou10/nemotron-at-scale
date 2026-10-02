@@ -77,6 +77,9 @@ jobs:
           - name: vosk-service
             context: vosk_service
             dockerfile: vosk_service/Dockerfile
+          - name: tts-service
+            context: tts_service
+            dockerfile: tts_service/Dockerfile
           - name: frontend
             context: frontend
             dockerfile: frontend/Dockerfile
@@ -106,6 +109,7 @@ jobs:
         service:
           - backend
           - vosk-service
+          - tts-service
           - frontend
     uses: Mitchou10/github-workflow/.github/workflows/scan-trivy.yml@v0
     permissions:

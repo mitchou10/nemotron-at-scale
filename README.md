@@ -159,6 +159,12 @@ cours) sur la dernière heure, 24 heures ou 7 jours, avec le détail par instanc
 `GET /api/v1/asr/instances` (temps réel) et `GET /api/v1/asr/history` (historique). Voir
 [frontend/README.md](frontend/README.md).
 
+**Synthèse vocale (TTS)** : `tts_service` (Piper, CPU) expose une API **compatible OpenAI**
+`POST /v1/audio/speech` (formats `mp3`, `wav`, `flac`, `pcm`, voix OpenAI ou Piper). Avec
+`docker compose --profile tts up` et `TTS_ENABLED=true`, le backend la relaie sur `/api/v1/audio/speech` : un
+client OpenAI n'a qu'à pointer `base_url` vers `http://localhost:8000/api/v1` (ou `http://localhost:8081/v1` pour
+le service seul). Voir [tts_service/README.md](tts_service/README.md).
+
 Les variables d'environnement sont décrites dans [docs/environment.md](docs/environment.md).
 
 ## CI/CD et releases
@@ -173,7 +179,7 @@ Le dépôt `github-workflow` doit être public, ou autoriser ce dépôt (Setting
 | `unit-tests.yml` | appelé par `ci.yml` | pytest sur `backend/` et `vosk_service/` |
 | `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR et scan Trivy des images publiées (rapport seul) quand une release est créée |
 
-**Chart Helm** : `helm/` (backend, vosk et frontend), généré avec
+**Chart Helm** : `helm/` (backend, vosk, tts et frontend), généré avec
 [helm-template.sh](https://github.com/this-is-tobi/tools/blob/main/shell/helm-template.sh) de this-is-tobi.
 Le secret `nemotron-database` (clé `url`, URL SQLAlchemy asyncpg) est à créer avant l'installation :
 `helm install nemotron ./helm`. Le README du chart se régénère avec `helm-docs -c helm`.
@@ -194,6 +200,7 @@ La fusionner crée le tag et la release GitHub, met à jour `CHANGELOG.md` et la
 ```
 ghcr.io/mitchou10/nemotron-at-scale-backend:<version>        (+ :latest)
 ghcr.io/mitchou10/nemotron-at-scale-vosk-service:<version>   (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale-tts-service:<version>    (+ :latest)
 ghcr.io/mitchou10/nemotron-at-scale-frontend:<version>       (+ :latest)
 ```
 
