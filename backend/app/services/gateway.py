@@ -1,6 +1,6 @@
 """Gateway spreading audio streams over several `nemo-speech serve` instances.
 
-Instances come from a `Discovery` (static list, DNS...). Every instance is probed
+Instances come from a `Discovery` (the registry the instances register in). Every instance is probed
 (`GET /ready`) to measure latency. Streams fill instances one after the other: a new stream goes
 to the first healthy instance (by discovery priority, then address) that has not reached its
 stream limit. An optional `max_latency_ms` skips slow instances unless every free instance is

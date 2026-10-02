@@ -22,8 +22,8 @@ Run from `backend/` (the audio sample is bundled):
 
 N is "sustainable" when there is no error, p95 final_lag <= --max-lag and (vosk) late chunks
 <= --max-late. `--find-capacity` doubles N until it fails, then bisects: the answer is the
-largest sustainable N, the value to use as the instance limit (`#N` in ASR_URL). Keep the
-machine otherwise idle: results include CPU contention from anything else running.
+largest sustainable N, the value to use as the instance limit (the `max_streams` it announces).
+Keep the machine otherwise idle: results include CPU contention from anything else running.
 """
 
 import argparse

@@ -1,22 +1,17 @@
-"""Discovery of the transcription instances the gateway can route streams to."""
+"""Discovery of the transcription instances the gateway can route streams to.
 
-import asyncio
-import socket
+Instances register themselves (see `registry.py`): there is no DNS or static list any more.
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
-VOSK_PORT = 2700
+from app.services.registry import RegisteredInstance, RegistryStore
 
-
-@dataclass(frozen=True)
-class Endpoint:
-    """A configured realtime WebSocket URL and the number of streams one instance may hold."""
-
-    url: str
-    max_streams: int
-    kind: Literal["nemo", "vosk"] = "nemo"
+AsrKind = Literal["nemo", "vosk"]
+ASR_KINDS: tuple[AsrKind, ...] = ("nemo", "vosk")
 
 
 @dataclass(frozen=True)
@@ -26,7 +21,7 @@ class DiscoveredInstance:
     probe_url: str
     max_streams: int
     priority: int
-    kind: Literal["nemo", "vosk"] = "nemo"
+    kind: AsrKind = "nemo"
 
 
 class Discovery(ABC):
@@ -39,93 +34,32 @@ class Discovery(ABC):
     async def discover(self) -> list[DiscoveredInstance]: ...
 
 
-def _describe(endpoint: Endpoint, priority: int, host: str, port: int) -> DiscoveredInstance:
-    parts = urlsplit(endpoint.url)
+def describe_instance(
+    kind: AsrKind, url: str, max_streams: int, priority: int = 0
+) -> DiscoveredInstance:
+    """Build the gateway's view of an instance from the realtime WebSocket URL it announced."""
+    parts = urlsplit(url)
     secure = parts.scheme == "wss"
-    key = f"{host}:{port}"
+    port = parts.port or (443 if secure else 80)
+    key = f"{parts.hostname or ''}:{port}"
     url = parts._replace(netloc=key, fragment="").geturl()
     # Vosk has no HTTP health route: it is probed with a WebSocket handshake on its own URL.
-    probe_url = url if endpoint.kind == "vosk" else f"{'https' if secure else 'http'}://{key}/ready"
-    return DiscoveredInstance(
-        key=key,
-        url=url,
-        probe_url=probe_url,
-        max_streams=endpoint.max_streams,
-        priority=priority,
-        kind=endpoint.kind,
-    )
+    probe_url = url if kind == "vosk" else f"{'https' if secure else 'http'}://{key}/ready"
+    return DiscoveredInstance(key, url, probe_url, max_streams, priority, kind)
 
 
-def _host(url: str) -> str:
-    return urlsplit(url).hostname or ""
+class RegistryDiscovery(Discovery):
+    """The instances that registered and whose heartbeat is recent."""
 
-
-def _port(url: str) -> int:
-    parts = urlsplit(url)
-    return parts.port or (443 if parts.scheme == "wss" else 80)
-
-
-class StaticDiscovery(Discovery):
-    """One instance per configured endpoint, taken as is."""
-
-    def __init__(self, endpoints: list[Endpoint]) -> None:
-        self._endpoints = endpoints
+    def __init__(self, registry: RegistryStore, ttl_s: float) -> None:
+        self._registry = registry
+        self._ttl_s = ttl_s
 
     async def discover(self) -> list[DiscoveredInstance]:
-        return [
-            _describe(
-                endpoint, priority, urlsplit(endpoint.url).hostname or "", _port(endpoint.url)
-            )
-            for priority, endpoint in enumerate(self._endpoints)
-        ]
+        alive = await self._registry.list_alive(self._ttl_s, kinds=ASR_KINDS)
+        return [self._describe(i) for i in alive]
 
-
-async def resolve_ipv4(host: str, port: int) -> list[str]:
-    try:
-        infos = await asyncio.get_running_loop().getaddrinfo(
-            host, port, family=socket.AF_INET, type=socket.SOCK_STREAM
-        )
-    except OSError:
-        return []
-    return list(dict.fromkeys(info[4][0] for info in infos))
-
-
-class DnsDiscovery(Discovery):
-    """Resolves each endpoint hostname to all its IPv4 addresses, one instance per address.
-
-    A Docker service scaled with `--scale` resolves to one IP per replica.
-    """
-
-    def __init__(self, endpoints: list[Endpoint]) -> None:
-        self._endpoints = endpoints
-
-    async def discover(self) -> list[DiscoveredInstance]:
-        found: list[DiscoveredInstance] = []
-        for priority, endpoint in enumerate(self._endpoints):
-            port = _port(endpoint.url)
-            hostname = _host(endpoint.url)
-            found.extend(
-                _describe(endpoint, priority, ip, port) for ip in await resolve_ipv4(hostname, port)
-            )
-        return found
-
-
-def parse_endpoints(urls: str, default_max_streams: int) -> list[Endpoint]:
-    """Parse `url[#limit],url[#limit],...` (comma separated, in fill order).
-
-    `ws://` / `wss://` URLs are nemo-speech instances; `vosk://host[:2700]` is a Vosk server.
-    """
-    endpoints = []
-    for raw in (u.strip() for u in urls.split(",")):
-        if not raw:
-            continue
-        parts = urlsplit(raw)
-        limit = int(parts.fragment) if parts.fragment else default_max_streams
-        kind: Literal["nemo", "vosk"] = "nemo"
-        if parts.scheme == "vosk":
-            kind = "vosk"
-            parts = parts._replace(
-                scheme="ws", netloc=f"{parts.hostname}:{parts.port or VOSK_PORT}"
-            )
-        endpoints.append(Endpoint(parts._replace(fragment="").geturl(), limit, kind))
-    return endpoints
+    @staticmethod
+    def _describe(instance: RegisteredInstance) -> DiscoveredInstance:
+        kind: AsrKind = "vosk" if instance.kind == "vosk" else "nemo"
+        return describe_instance(kind, instance.url, instance.max_streams, instance.priority)

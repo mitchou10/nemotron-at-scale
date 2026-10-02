@@ -11,9 +11,8 @@ import pytest
 from websockets.asyncio.server import Request, ServerConnection, serve
 from websockets.http11 import Response
 
-from app.services import discovery as discovery_module
 from app.services import gateway as gateway_module
-from app.services.discovery import DiscoveredInstance, Discovery, DnsDiscovery, parse_endpoints
+from app.services.discovery import DiscoveredInstance, Discovery, describe_instance
 from app.services.gateway import Gateway
 from app.services.state import (
     InMemoryStateStore,
@@ -27,6 +26,7 @@ from app.services.transcription import (
     TranscriberUnavailableError,
     TranscriptEvent,
 )
+from tests.discovery_helpers import ListDiscovery, discovery_for
 
 PATH = "/v1/audio/transcriptions/realtime"
 
@@ -79,8 +79,7 @@ async def fake_instance(
 
 
 def make_gateway(urls: list[str], max_streams: int = 8, **kw: float) -> Gateway:
-    endpoints = parse_endpoints(",".join(urls), max_streams)
-    return Gateway(DnsDiscovery(endpoints), **kw)  # type: ignore[arg-type]
+    return Gateway(discovery_for(",".join(urls), max_streams), **kw)  # type: ignore[arg-type]
 
 
 def url(port: int, host: str = "127.0.0.1") -> str:
@@ -151,14 +150,15 @@ async def test_freed_slot_is_reused_before_next_instance() -> None:
     assert [first, second, third] == ["a", "b", "a"]
 
 
-async def test_replicas_of_same_url_fill_in_address_order(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_replicas_with_the_same_priority_fill_in_address_order() -> None:
     async with fake_instance("a", host="0.0.0.0") as a:
-
-        async def fake_resolve(host: str, port: int) -> list[str]:
-            return ["127.0.0.2", "127.0.0.1"]
-
-        monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-        gw = make_gateway([url(a.port, "svc")], max_streams=1)
+        discovery = ListDiscovery(
+            [
+                describe_instance("nemo", url(a.port, "127.0.0.2"), 1),
+                describe_instance("nemo", url(a.port, "127.0.0.1"), 1),
+            ]
+        )
+        gw = Gateway(discovery)
         async with running(gw):
             s1 = await gw.open_session()
             after_first = {s["instance"]: s["active_streams"] for s in gw.status()}
@@ -214,7 +214,7 @@ async def test_busy_when_all_instances_at_capacity() -> None:
 
 
 async def test_unavailable_when_no_instance() -> None:
-    gw = make_gateway(["ws://does-not-exist.invalid:8080" + PATH])
+    gw = Gateway(ListDiscovery([]))
     async with running(gw):
         assert gw.status() == []
         with pytest.raises(TranscriberUnavailableError) as exc:
@@ -308,21 +308,15 @@ async def test_session_failure_marks_instance_unhealthy() -> None:
             assert instance.active == 0
 
 
-async def test_discovery_removes_vanished_and_drains_active(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_discovery_removes_vanished_and_drains_active() -> None:
     async with fake_instance("a") as a:
-        addresses = ["127.0.0.1"]
-
-        async def fake_resolve(host: str, port: int) -> list[str]:
-            return list(addresses)
-
-        monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-        gw = make_gateway([url(a.port, "svc")])
+        discovery = discovery_for(url(a.port))
+        instances = list(discovery.items)
+        gw = Gateway(discovery)
         async with running(gw):
             key = f"127.0.0.1:{a.port}"
             session = await gw.open_session()
-            addresses.clear()
+            discovery.items.clear()
             await gw.refresh()
             assert key in gw._instances and gw.status()[0]["healthy"] is False
             with pytest.raises(TranscriberUnavailableError):
@@ -330,7 +324,7 @@ async def test_discovery_removes_vanished_and_drains_active(
             await session.close()
             await gw.refresh()
             assert gw.status() == []
-            addresses.append("127.0.0.1")
+            discovery.items.extend(instances)
             await gw.refresh()
             assert gw.status()[0]["healthy"] is True
 
@@ -387,7 +381,7 @@ async def test_stream_resumes_on_another_instance_after_crash() -> None:
 
 def state_gateway(urls: list[str], **kw: float) -> tuple[Gateway, InMemoryStateStore]:
     store = InMemoryStateStore()
-    gw = Gateway(DnsDiscovery(parse_endpoints(",".join(urls), 4)), store=store, **kw)  # type: ignore[arg-type]
+    gw = Gateway(discovery_for(",".join(urls), 4), store=store, **kw)  # type: ignore[arg-type]
     return gw, store
 
 
@@ -438,18 +432,14 @@ async def test_state_marks_unreachable_instance_down() -> None:
     assert saved.status == InstanceStatus.DOWN
 
 
-async def test_state_marks_draining_then_gone(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_state_marks_draining_then_gone() -> None:
     async with fake_instance("a") as a:
-        addresses = ["127.0.0.1"]
-
-        async def fake_resolve(host: str, port: int) -> list[str]:
-            return list(addresses)
-
-        monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-        gw, store = state_gateway([url(a.port, "svc")])
+        discovery = discovery_for(url(a.port))
+        store = InMemoryStateStore()
+        gw = Gateway(discovery, store=store)
         async with running(gw):
             session = await gw.open_session("alice")
-            addresses.clear()
+            discovery.items.clear()
             await gw.refresh()
             [draining] = await store.list_instances()
             await session.close()
@@ -481,7 +471,7 @@ class BrokenStore(InMemoryStateStore):
 async def test_gateway_keeps_working_when_the_store_is_down() -> None:
     async with fake_instance("a") as a:
         gw = Gateway(
-            DnsDiscovery(parse_endpoints(url(a.port), 4)),
+            discovery_for(url(a.port), 4),
             store=BrokenStore(),
         )
         async with running(gw):

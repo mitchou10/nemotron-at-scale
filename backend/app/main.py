@@ -1,71 +1,86 @@
 """FastAPI application factory."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import asr_router, audio_router, health_router, metrics_router, tts_router
+from app.api.routes import (
+    asr_router,
+    audio_router,
+    health_router,
+    metrics_router,
+    registry_router,
+    tts_router,
+)
 from app.config import settings
 from app.db import AsyncSessionLocal
-from app.services.discovery import (
-    Discovery,
-    DnsDiscovery,
-    StaticDiscovery,
-    parse_endpoints,
-)
+from app.services.discovery import RegistryDiscovery
 from app.services.gateway import Gateway
-from app.services.state import InMemoryStateStore, StateStore
+from app.services.registry import InMemoryRegistryStore, RegistryStore
+from app.services.registry_sql import SqlRegistryStore
+from app.services.state import InMemoryStateStore, StateStore, safely
 from app.services.state_sql import SqlStateStore
+from app.services.tts_pool import TtsPool
+
+PRUNE_INTERVAL_S = 60.0
+
+
+async def _prune_registry(registry: RegistryStore) -> None:
+    """Forget the instances that have been silent for much longer than the TTL."""
+    while True:
+        await asyncio.sleep(PRUNE_INTERVAL_S)
+        await safely(registry.prune(settings.REGISTRY_TTL_S * 10), "prune the registry")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown events."""
-    gateway = build_gateway()
+    registry: RegistryStore = app.state.registry
+    gateway = build_gateway(registry)
     app.state.transcriber = gateway
     if gateway:
         await gateway.start()
-    tts = build_tts_client()
-    app.state.tts = tts
+    pool = TtsPool(
+        registry,
+        settings.REGISTRY_TTL_S,
+        api_key=settings.TTS_API_KEY,
+        timeout_s=settings.TTS_TIMEOUT_S,
+    )
+    app.state.tts_pool = pool
+    pruner = asyncio.create_task(_prune_registry(registry))
     yield
-    if tts:
-        await tts.aclose()
+    pruner.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await pruner
+    await pool.close()
     if gateway:
         await gateway.stop()
     await engine_dispose()
 
 
-def build_tts_client() -> httpx.AsyncClient | None:
-    """Return the HTTP client of the text-to-speech service when it is enabled."""
-    if not settings.TTS_ENABLED:
-        return None
-    headers = {"Authorization": f"Bearer {settings.TTS_API_KEY}"} if settings.TTS_API_KEY else {}
-    return httpx.AsyncClient(
-        base_url=settings.TTS_URL,
-        headers=headers,
-        timeout=httpx.Timeout(settings.TTS_TIMEOUT_S, connect=5.0),
-    )
+def build_registry() -> RegistryStore:
+    """The registry of worker instances, shared by every backend replica through the database."""
+    if settings.REGISTRY_STORE == "database":
+        return SqlRegistryStore(AsyncSessionLocal)
+    return InMemoryRegistryStore()
 
 
-def build_gateway() -> Gateway | None:
+def build_gateway(registry: RegistryStore) -> Gateway | None:
     """Return the ASR gateway when live transcription is enabled."""
     if not settings.ASR_ENABLED:
         return None
-    endpoints = parse_endpoints(settings.ASR_URL, settings.ASR_MAX_STREAMS_PER_INSTANCE)
-    discovery: Discovery = (
-        DnsDiscovery(endpoints) if settings.ASR_DISCOVERY == "dns" else StaticDiscovery(endpoints)
-    )
     store: StateStore = (
         SqlStateStore(AsyncSessionLocal)
         if settings.ASR_STATE_STORE == "database"
         else InMemoryStateStore()
     )
     return Gateway(
-        discovery,
+        RegistryDiscovery(registry, settings.REGISTRY_TTL_S),
         settings.ASR_API_KEY,
         store=store,
         probe_interval=settings.ASR_PROBE_INTERVAL_S,
@@ -104,12 +119,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.state.registry = build_registry()
+
     # Routers
     api_prefix = "/api/v1"
     app.include_router(health_router, prefix=api_prefix)
     app.include_router(audio_router, prefix=api_prefix)
     app.include_router(asr_router, prefix=api_prefix)
     app.include_router(tts_router, prefix=api_prefix)
+    app.include_router(registry_router, prefix=api_prefix)
     app.include_router(metrics_router)
 
     return app

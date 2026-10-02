@@ -44,3 +44,17 @@ class AsrSample(Base):
     active_streams: Mapped[int] = mapped_column(Integer)
     max_streams: Mapped[int] = mapped_column(Integer)
     latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class RegisteredWorker(Base):
+    """A worker instance that registered itself (see app.services.registry)."""
+
+    __tablename__ = "registered_instances"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    url: Mapped[str] = mapped_column(String(512))
+    max_streams: Mapped[int] = mapped_column(Integer)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
