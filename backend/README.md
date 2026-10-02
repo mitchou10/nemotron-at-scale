@@ -122,6 +122,8 @@ alembic downgrade -1
 | GET     | `/api/v1/health`         | Liveness probe       |
 | GET     | `/api/v1/health/ready`   | Readiness probe      |
 | GET     | `/api/v1/asr/instances`  | État des instances ASR (gateway) |
+| GET     | `/api/v1/asr/history?hours=24&buckets=90` | Disponibilité, latence et charge de chaque instance par tranche de temps, et totaux de flux |
+| GET     | `/status/`               | Page de statut (HTML statique, sans build) |
 | WS      | `/api/v1/ws/audio/{client_id}` | Flux audio PCM 16 kHz mono 16-bit, id unique par client |
 
 ### Transcription live (Nemotron 0.6B)

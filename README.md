@@ -154,6 +154,13 @@ Un test optionnel utilise un vrai modèle Vosk (`VOSK_TEST_MODEL_DIR`, voir `vos
 Raccourcis (`make help`) : `make install-hooks` (hooks git), `make check` (tous les hooks sur tous les
 fichiers), `make lint`, `make test`, `make gitleaks` (recherche de secrets dans tout l'historique).
 
+**Page de statut** : `http://localhost:8000/status/` affiche l'état des workers ASR (disponibilité, latence, flux en
+cours) sur la dernière heure, 24 heures ou 7 jours, avec le détail par instance. Les données viennent de
+`GET /api/v1/asr/instances` (temps réel) et `GET /api/v1/asr/history` (historique). Voir
+[backend/README.md](backend/README.md).
+
+Les variables d'environnement sont décrites dans [docs/environment.md](docs/environment.md).
+
 ## CI/CD et releases
 
 Les workflows réutilisables viennent de [Mitchou10/github-workflow](https://github.com/Mitchou10/github-workflow)
@@ -165,6 +172,17 @@ Le dépôt `github-workflow` doit être public, ou autoriser ce dépôt (Setting
 | `ci.yml` | pull request | messages de commit (Conventional Commits), ruff, tests, recherche de secrets (gitleaks), scan de configuration (Trivy), build de chaque image modifiée (sans publication) ; les jobs sont filtrés par dossier modifié ; le job **Check jobs status** regroupe tout |
 | `unit-tests.yml` | appelé par `ci.yml` | pytest sur `backend/` et `vosk_service/` |
 | `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR et scan Trivy des images publiées (rapport seul) quand une release est créée |
+
+**Chart Helm** : `helm/` (backend + vosk), généré avec
+[helm-template.sh](https://github.com/this-is-tobi/tools/blob/main/shell/helm-template.sh) de this-is-tobi.
+Le secret `nemotron-database` (clé `url`, URL SQLAlchemy asyncpg) est à créer avant l'installation :
+`helm install nemotron ./helm`. Le README du chart se régénère avec `helm-docs -c helm`.
+À chaque release, `cd.yml` met à jour `appVersion` et `version` du chart (commit direct sur la branche), puis
+publie le chart en OCI sur GHCR. `ci/configs/ct.yaml` configure le lint (chart-testing + helm-docs).
+
+**GitLab (DSO)** : `.gitlab-ci-dso.yml` construit les deux images (Kaniko) et pousse le chart sur Harbor.
+Variables à définir côté GitLab : `CATALOG_PATH`, `REGISTRY_HOST`, `PROJECT_PATH`, `DOCKER_AUTH`,
+`IMAGE_REPOSITORY`, `DOCKERHUB_MIRROR_URL`.
 
 **Flux de release** (release-please) : les commits suivent les
 [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `perf:`, `refactor:`,
