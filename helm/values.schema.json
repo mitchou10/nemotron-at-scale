@@ -391,9 +391,9 @@
       "additionalProperties": { "$ref": "#/definitions/batchEntry" }
     },
     "extraObjects": {
-      "description": "Map of arbitrary name -> manifest (object, or a string to be run through `tpl`).",
+      "description": "Map of arbitrary name -> manifest (object, or a string to be run through `tpl`). A null value removes an entry defined by an earlier values file.",
       "type": ["object", "null"],
-      "additionalProperties": { "type": ["object", "string"] }
+      "additionalProperties": { "type": ["object", "string", "null"] }
     }
   }
 }
