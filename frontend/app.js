@@ -1,6 +1,6 @@
 "use strict";
 
-const API = new URL("../api/v1/asr/", location.href);
+const API = new URL("api/v1/asr/", location.href);
 const REFRESH_MS = 10000;
 
 let range = { hours: 24, buckets: 96 };

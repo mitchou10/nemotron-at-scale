@@ -55,6 +55,18 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
+  frontend:
+    build:
+      context: ./frontend
+    container_name: nemotron-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    depends_on:
+      - backend
+
   prometheus:
     profiles: ["monitoring"]
     image: prom/prometheus:v3.0.1

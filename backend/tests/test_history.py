@@ -133,10 +133,3 @@ async def test_history_route_is_empty_without_gateway(client: AsyncClient) -> No
 async def test_history_route_validates_parameters(client: AsyncClient) -> None:
     assert (await client.get("/api/v1/asr/history?hours=0")).status_code == 422
     assert (await client.get("/api/v1/asr/history?buckets=1000")).status_code == 422
-
-
-async def test_status_page_is_served(client: AsyncClient) -> None:
-    page = await client.get("/status/")
-    assert page.status_code == 200
-    assert "Nemotron" in page.text
-    assert (await client.get("/status/app.js")).status_code == 200
