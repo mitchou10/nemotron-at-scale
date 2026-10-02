@@ -263,14 +263,14 @@ backend:
     # @section -- Backend
     labels: {}
     hosts:
-      - # -- Name of the host record.
+      -  # -- Name of the host record.
         # @section -- Backend
         name: "domain.local"
         # -- Paths of the host record to manage routing (avoids repeating the same host for
         # multiple paths/backends).
         # @section -- Backend
         paths:
-          - # -- Path of the host record to manage routing.
+          -  # -- Path of the host record to manage routing.
             # @section -- Backend
             path: "/"
             # -- Path type of the host record.
@@ -1302,14 +1302,14 @@ vosk:
     # @section -- Vosk
     labels: {}
     hosts:
-      - # -- Name of the host record.
+      -  # -- Name of the host record.
         # @section -- Vosk
         name: "domain.local"
         # -- Paths of the host record to manage routing (avoids repeating the same host for
         # multiple paths/backends).
         # @section -- Vosk
         paths:
-          - # -- Path of the host record to manage routing.
+          -  # -- Path of the host record to manage routing.
             # @section -- Vosk
             path: "/"
             # -- Path type of the host record.
@@ -2145,14 +2145,14 @@ frontend:
     # @section -- Frontend
     labels: {}
     hosts:
-      - # -- Name of the host record.
+      -  # -- Name of the host record.
         # @section -- Frontend
         name: "domain.local"
         # -- Paths of the host record to manage routing (avoids repeating the same host for
         # multiple paths/backends).
         # @section -- Frontend
         paths:
-          - # -- Path of the host record to manage routing.
+          -  # -- Path of the host record to manage routing.
             # @section -- Frontend
             path: "/"
             # -- Path type of the host record.
@@ -2990,14 +2990,14 @@ tts:
     # @section -- Tts
     labels: {}
     hosts:
-      - # -- Name of the host record.
+      -  # -- Name of the host record.
         # @section -- Tts
         name: "domain.local"
         # -- Paths of the host record to manage routing (avoids repeating the same host for
         # multiple paths/backends).
         # @section -- Tts
         paths:
-          - # -- Path of the host record to manage routing.
+          -  # -- Path of the host record to manage routing.
             # @section -- Tts
             path: "/"
             # -- Path type of the host record.
