@@ -380,6 +380,7 @@
     },
     "backend": { "$ref": "#/definitions/workloadComponent" },
     "vosk": { "$ref": "#/definitions/workloadComponent" },
+    "frontend": { "$ref": "#/definitions/workloadComponent" },
     "jobs": {
       "type": ["object", "null"],
       "additionalProperties": { "$ref": "#/definitions/batchEntry" }

@@ -8,4 +8,5 @@ Add one `include` line per component when you add components to this chart.
 {{- if .Values.enabled }}
 {{- include "helper.component.validate" (dict "name" "backend" "component" .Values.backend) }}
 {{- include "helper.component.validate" (dict "name" "vosk" "component" .Values.vosk) }}
+{{- include "helper.component.validate" (dict "name" "frontend" "component" .Values.frontend) }}
 {{- end }}
