@@ -1,6 +1,6 @@
 [project]
 name = "vosk-service"
-version = "0.2.0-rc.1"
+version = "0.2.0-rc.2"
 description = "Standalone Vosk (Kaldi) speech-to-text server with nemo-speech-like HTTP and realtime WebSocket routes"
 readme = "README.md"
 requires-python = ">=3.11"

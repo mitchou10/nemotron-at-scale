@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0-rc.2](https://github.com/mitchou10/nemotron-at-scale/compare/v0.2.0-rc.1...v0.2.0-rc.2) (2026-10-02)
+
+
+### Features
+
+* **backend:** instance registry, gateway for STT and TTS ([bb5b8cd](https://github.com/mitchou10/nemotron-at-scale/commit/bb5b8cd816cc4a44a4117c17c6c04c441ac89df4))
+* **deploy:** wire the registry in compose and the chart, update the docs ([a40258d](https://github.com/mitchou10/nemotron-at-scale/commit/a40258d8c3a60a5e23fc2233eaf7f10ddcbe8ae5))
+* **helm:** add CloudNativePG cluster and Vault secrets for dev ([b3c4cd5](https://github.com/mitchou10/nemotron-at-scale/commit/b3c4cd516c842af3c514ce9965a1bd2dfd937072))
+* **vosk,tts:** register in the backend registry with a heartbeat ([b7026a6](https://github.com/mitchou10/nemotron-at-scale/commit/b7026a6df51e88df9b2e14d4d70b19283584ae7d))
+
 ## [0.2.0-rc.1](https://github.com/mitchou10/nemotron-at-scale/compare/v0.2.0-rc...v0.2.0-rc.1) (2026-10-02)
 
 
