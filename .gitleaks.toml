@@ -18,4 +18,8 @@ useDefault = true
 # regexTarget = "line"
 # regexes = ['''^\s*POSTGRES_PASSWORD:''']
 #
-# No exception is needed today: the full history scans clean.
+[[allowlists]]
+targetRules = ["kubernetes-secret-yaml"]
+description = "Chart test fixture: an example Secret manifest with a dummy value, never deployed."
+condition = "AND"
+paths = ['''^helm/test-values\.yaml$''']

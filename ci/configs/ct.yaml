@@ -6,6 +6,9 @@ chart-dirs:
   - .
 # The chart has no dependencies yet: declare plain-HTTP repositories here when it gets some.
 chart-repos: []
+# The chart version is bumped by the CD (bump-chart) when a release is cut, not by hand in each pull
+# request: requiring an increment here would fail every change to the chart.
+check-version-increment: false
 helm-extra-args: ""
 validate-chart-schema: true
 validate-chart-values: true
