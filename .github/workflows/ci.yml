@@ -32,6 +32,8 @@ jobs:
           - 'backend/**'
         vosk_service:
           - 'vosk_service/**'
+        tts_service:
+          - 'tts_service/**'
         frontend:
           - 'frontend/**'
         helm:
@@ -69,6 +71,16 @@ jobs:
     with:
       WORKING_DIRECTORY: vosk_service
 
+  lint-tts-service:
+    name: Lint tts_service
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'tts_service') }}
+    uses: Mitchou10/github-workflow/.github/workflows/python-lint.yml@v0
+    permissions:
+      contents: read
+    with:
+      WORKING_DIRECTORY: tts_service
+
   # Chart lint (chart-testing + helm-docs), same shared workflow as the Muffin project.
   lint-helm:
     name: Lint Helm chart
@@ -101,6 +113,16 @@ jobs:
       contents: read
     with:
       PROJECT: vosk_service
+
+  unit-tests-tts-service:
+    name: Tests tts_service
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'tts_service') }}
+    uses: ./.github/workflows/unit-tests.yml
+    permissions:
+      contents: read
+    with:
+      PROJECT: tts_service
 
   scan-gitleaks:
     name: Scan for leaked secrets
@@ -155,6 +177,20 @@ jobs:
       TARGET: runtime
       PUSH: false
 
+  build-tts-service:
+    name: Build tts-service
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'tts_service') }}
+    uses: Mitchou10/github-workflow/.github/workflows/build-docker.yml@v0
+    permissions:
+      contents: read
+    with:
+      IMAGE_NAME: local/tts-service
+      IMAGE_TAG: ci
+      CONTEXT: tts_service
+      TARGET: runtime
+      PUSH: false
+
   build-frontend:
     name: Build frontend
     needs: paths
@@ -178,13 +214,16 @@ jobs:
       - lint-commits
       - lint-backend
       - lint-vosk-service
+      - lint-tts-service
       - lint-helm
       - unit-tests-backend
       - unit-tests-vosk-service
+      - unit-tests-tts-service
       - scan-gitleaks
       - scan-trivy-conf
       - build-backend
       - build-vosk-service
+      - build-tts-service
       - build-frontend
     uses: Mitchou10/github-workflow/.github/workflows/status-gate.yml@v0
     with:

@@ -18,6 +18,11 @@
           "type": "toml",
           "path": "vosk_service/pyproject.toml",
           "jsonpath": "project.version"
+        },
+        {
+          "type": "toml",
+          "path": "tts_service/pyproject.toml",
+          "jsonpath": "project.version"
         }
       ],
       "changelog-sections": [

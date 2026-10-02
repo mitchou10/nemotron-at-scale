@@ -58,6 +58,17 @@ et leur charge, et route chaque flux vers la meilleure.
 
 Un nom d'hôte qui ne se résout pas (service non démarré, profil Compose inactif) est simplement ignoré.
 
+### Synthèse vocale (relais)
+
+Le backend relaie `POST /api/v1/audio/speech` vers le service `tts_service` (compatible OpenAI).
+
+| Variable | Défaut | Description |
+|---|---|---|
+| `TTS_ENABLED` | `false` | Active le relais. Désactivé : la route répond `503`. |
+| `TTS_URL` | `http://tts:8080` | Adresse du service `tts_service`. |
+| `TTS_API_KEY` | vide | Clé envoyée au service, si elle y est exigée. **Secret.** |
+| `TTS_TIMEOUT_S` | `60` | Délai maximal d'une requête vers le service. |
+
 ## Service Vosk
 
 Préfixe `VOSK_`. Le service dimensionne ses limites d'après les CPU **réellement disponibles** (limite du
@@ -84,6 +95,24 @@ conteneur, pas les cœurs de la machine).
 
 Une variable vide est ignorée (`VOSK_MAX_STREAMS=` revient au calcul automatique).
 
+## Service TTS (Piper)
+
+Préfixe `TTS_`, lu par `tts_service` ([tts_service/README.md](../tts_service/README.md)). `TTS_API_KEY` doit être la
+même des deux côtés (backend et service).
+
+| Variable | Défaut | Description |
+|---|---|---|
+| `TTS_HOST` / `TTS_PORT` | `0.0.0.0` / `8080` | Adresse d'écoute. |
+| `TTS_VOICES` | `fr_FR-siwis-medium` | Voix Piper, séparées par des virgules (la première est la voix par défaut). Téléchargées au premier démarrage. |
+| `TTS_VOICE_DIR` | `/voices` | Dossier des voix. À monter sur un volume pour ne pas les retélécharger. |
+| `TTS_VOICE_URL` | `https://huggingface.co/rhasspy/piper-voices/resolve/main` | Origine des voix (miroir interne possible). |
+| `TTS_MAX_REQUESTS` | CPU | Synthèses simultanées ; `429` au-delà. |
+| `TTS_MAX_INPUT_CHARS` | `4096` | Taille maximale du texte (limite d'OpenAI). |
+| `TTS_MP3_BITRATE` | `128` | Débit du MP3, en kbit/s. |
+| `TTS_API_KEY` | vide | Clé exigée des clients. **Secret.** |
+| `TTS_CORS_ORIGIN` | vide | Origine CORS autorisée. |
+| `TTS_LOG_LEVEL` | `info` | Niveau de log. |
+
 ## Docker Compose uniquement
 
 Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
@@ -94,6 +123,7 @@ Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
 | `BACKEND_PORT` | `8000` | Port du backend publié sur l'hôte. |
 | `FRONTEND_PORT` | `3000` | Port de la page de statut publié sur l'hôte. |
 | `PROMETHEUS_PORT` | `9090` | Port de Prometheus (profil `monitoring`). |
+| `TTS_PORT` | `8081` | Port du service TTS publié sur l'hôte (profil `tts`). |
 | `ASR_MODEL_FILE` | `nemotron-speech-streaming-en-0.6b.q8_0.gguf` | Fichier du modèle NeMo. |
 | `ASR_MODEL_URL` | Hugging Face (révision figée) | D'où `asr-model` télécharge le modèle NeMo. |
 | `ASR_HTTP_THREADS` | `32` | Threads HTTP des instances `nemo-speech` : plafond dur de flux par instance. |
@@ -116,6 +146,7 @@ Le chart ([helm/values.yaml](../helm/values.yaml)) fournit les variables ainsi :
 | `backend.envCm` | Configuration non secrète du backend (`APP_*`, `ASR_*`). Les valeurs sont passées à `tpl` : `ASR_URL` pointe vers le service Vosk du release. |
 | `backend.env.DATABASE_URL` | Lue depuis le secret Kubernetes `nemotron-database`, clé `url`, **à créer avant l'installation**. |
 | `vosk.envCm` | Configuration de Vosk (`VOSK_*`). |
+| `tts.envCm` | `TTS_VOICES`. Le backend reçoit `TTS_ENABLED` et `TTS_URL` vers le Service `tts` du release. |
 | `frontend.envCm` | `BACKEND_URL`, calculé vers le Service backend du release. |
 | `vosk.resources` | Limites CPU et mémoire ; la limite de flux en dérive. |
 
