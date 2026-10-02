@@ -46,7 +46,8 @@ jobs:
       APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
-  # Image names must be lower case, and expressions cannot lower-case a string.
+  # Images are ghcr.io/<owner>/<repository>/<image>:<tag>. Names must be lower case, and expressions
+  # cannot lower-case a string.
   image-prefix:
     name: Image name
     runs-on: ubuntu-latest
@@ -88,7 +89,7 @@ jobs:
       contents: read
       packages: write
     with:
-      IMAGE_NAME: ${{ needs.image-prefix.outputs.prefix }}-${{ matrix.service.name }}
+      IMAGE_NAME: ${{ needs.image-prefix.outputs.prefix }}/${{ matrix.service.name }}
       IMAGE_TAG: ${{ needs.release.outputs.version }}
       LATEST_TAG: ${{ github.ref_name == 'main' }}
       CONTEXT: ${{ matrix.service.context }}
@@ -118,7 +119,7 @@ jobs:
       security-events: write
     with:
       SCAN_TYPE: image
-      TARGET: ${{ needs.image-prefix.outputs.prefix }}-${{ matrix.service }}:${{ needs.release.outputs.version }}
+      TARGET: ${{ needs.image-prefix.outputs.prefix }}/${{ matrix.service }}:${{ needs.release.outputs.version }}
       FAIL_ON_FINDINGS: false
       SECURITY_TAB: true
       CATEGORY: trivy-image-${{ matrix.service }}
