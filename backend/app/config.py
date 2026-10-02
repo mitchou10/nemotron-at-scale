@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     ASR_HISTORY_INTERVAL_S: float = 30.0
     ASR_HISTORY_RETENTION_HOURS: int = 168
 
+    # Text to speech: URL of the OpenAI-compatible `tts_service` the backend relays to
+    TTS_ENABLED: bool = False
+    TTS_URL: str = "http://tts:8080"
+    TTS_API_KEY: str | None = None
+    TTS_TIMEOUT_S: float = 60.0
+
     # CORS
     CORS_ORIGINS: list[AnyHttpUrl] | list[str] = Field(
         default_factory=lambda: ["http://localhost:3000"]

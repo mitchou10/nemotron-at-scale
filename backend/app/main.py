@@ -4,10 +4,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import asr_router, audio_router, health_router, metrics_router
+from app.api.routes import asr_router, audio_router, health_router, metrics_router, tts_router
 from app.config import settings
 from app.db import AsyncSessionLocal
 from app.services.discovery import (
@@ -28,10 +29,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.transcriber = gateway
     if gateway:
         await gateway.start()
+    tts = build_tts_client()
+    app.state.tts = tts
     yield
+    if tts:
+        await tts.aclose()
     if gateway:
         await gateway.stop()
     await engine_dispose()
+
+
+def build_tts_client() -> httpx.AsyncClient | None:
+    """Return the HTTP client of the text-to-speech service when it is enabled."""
+    if not settings.TTS_ENABLED:
+        return None
+    headers = {"Authorization": f"Bearer {settings.TTS_API_KEY}"} if settings.TTS_API_KEY else {}
+    return httpx.AsyncClient(
+        base_url=settings.TTS_URL,
+        headers=headers,
+        timeout=httpx.Timeout(settings.TTS_TIMEOUT_S, connect=5.0),
+    )
 
 
 def build_gateway() -> Gateway | None:
@@ -92,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=api_prefix)
     app.include_router(audio_router, prefix=api_prefix)
     app.include_router(asr_router, prefix=api_prefix)
+    app.include_router(tts_router, prefix=api_prefix)
     app.include_router(metrics_router)
 
     return app
