@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tts-service</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    textarea { width: 100%; min-height: 8rem; font: inherit; padding: .5rem; box-sizing: border-box; }
+    label { display: block; margin-top: .75rem; font-size: .9rem; color: #555; }
+    select, input, button { font: inherit; padding: .35rem .6rem; }
+    audio { width: 100%; margin-top: 1rem; }
+    #error { color: #c0392b; min-height: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Synthèse vocale</h1>
+  <textarea id="text">Bonjour, ceci est un test de synthèse vocale.</textarea>
+  <label>Voix <select id="voice"></select></label>
+  <label>Vitesse <input id="speed" type="number" min="0.25" max="4" step="0.05" value="1"></label>
+  <p><button id="go">Lire</button></p>
+  <p id="error"></p>
+  <audio id="player" controls></audio>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    fetch("v1/audio/voices").then((r) => r.json()).then((list) => {
+      for (const v of list.data) $("voice").append(new Option(`${v.id} (${v.language})`, v.id));
+    }).catch(() => { $("error").textContent = "Voix indisponibles (le service charge peut-être encore)."; });
+    $("go").onclick = async () => {
+      $("error").textContent = "";
+      const response = await fetch("v1/audio/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "tts-1", input: $("text").value, voice: $("voice").value || "alloy",
+          response_format: "mp3", speed: Number($("speed").value) || 1,
+        }),
+      });
+      if (!response.ok) {
+        $("error").textContent = (await response.json()).error?.message || response.statusText;
+        return;
+      }
+      $("player").src = URL.createObjectURL(await response.blob());
+      $("player").play();
+    };
+  </script>
+</body>
+</html>
