@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nemotron - Status</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Nemotron <span>status</span></h1>
+      <div class="ranges" id="ranges" role="group" aria-label="Période">
+        <button data-hours="1" data-buckets="60">1 h</button>
+        <button data-hours="24" data-buckets="96" class="active">24 h</button>
+        <button data-hours="168" data-buckets="84">7 j</button>
+      </div>
+    </header>
+
+    <section id="banner" class="banner loading" aria-live="polite">Chargement…</section>
+
+    <section class="cards" id="cards"></section>
+
+    <h2>Workers</h2>
+    <section id="workers"></section>
+
+    <footer>
+      <span id="updated">-</span>
+      <span>Rafraîchi toutes les 10 s</span>
+    </footer>
+  </main>
+  <div id="tip" class="tip" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

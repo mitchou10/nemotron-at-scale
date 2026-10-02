@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Resume on another instance if one drops: audio kept per stream, and failover budget.
     ASR_BUFFER_SECONDS: int = 30
     ASR_MAX_FAILOVERS: int = 2
+    # Status page history: one sample per instance every N seconds, kept for N hours (0 = off).
+    ASR_HISTORY_INTERVAL_S: float = 30.0
+    ASR_HISTORY_RETENTION_HOURS: int = 168
 
     # CORS
     CORS_ORIGINS: list[AnyHttpUrl] | list[str] = Field(

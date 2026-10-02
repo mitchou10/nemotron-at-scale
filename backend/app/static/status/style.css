@@ -1,0 +1,87 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #fff;
+  --text: #1c2330;
+  --muted: #667085;
+  --border: #e3e7ee;
+  --ok: #2fb344;
+  --warn: #f59f00;
+  --bad: #e03131;
+  --none: #cfd5df;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151c;
+    --card: #1a2029;
+    --text: #e6e9ef;
+    --muted: #8b95a7;
+    --border: #2a3240;
+    --none: #3a4354;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 22px; margin: 0; }
+h1 span { color: var(--muted); font-weight: 400; }
+h2 { font-size: 16px; margin: 28px 0 10px; }
+
+.ranges { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
+.ranges button {
+  border: 0; background: none; color: var(--muted); padding: 6px 14px; font: inherit; cursor: pointer;
+}
+.ranges button + button { border-left: 1px solid var(--border); }
+.ranges button.active { background: var(--text); color: var(--bg); }
+
+.banner {
+  margin: 18px 0; padding: 16px 20px; border-radius: 10px; color: #fff; font-weight: 600; font-size: 17px;
+}
+.banner.ok { background: var(--ok); }
+.banner.warn { background: var(--warn); color: #1c2330; }
+.banner.bad { background: var(--bad); }
+.banner.loading, .banner.none { background: var(--none); color: var(--text); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.card .label { color: var(--muted); font-size: 13px; }
+.card .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.card .sub { color: var(--muted); font-size: 12px; }
+
+.worker { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.worker .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.worker .name { font-weight: 600; word-break: break-all; }
+.badge { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.pill { margin-left: auto; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--none); display: inline-block; }
+.up .dot { background: var(--ok); }
+.down .dot { background: var(--bad); }
+.up { color: var(--ok); }
+.down { color: var(--bad); }
+
+.bars { display: flex; gap: 2px; margin: 12px 0 6px; height: 34px; }
+.bars i { flex: 1; border-radius: 2px; background: var(--none); min-width: 2px; }
+.bars i.ok { background: var(--ok); }
+.bars i.warn { background: var(--warn); }
+.bars i.bad { background: var(--bad); }
+.axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+
+.stats { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.meter { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+.meter div { height: 100%; background: var(--ok); }
+.meter div.high { background: var(--warn); }
+.meter div.full { background: var(--bad); }
+
+.empty { color: var(--muted); padding: 24px; text-align: center; background: var(--card); border: 1px dashed var(--border); border-radius: 10px; }
+footer { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 24px; }
+
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; background: #111827; color: #f3f4f6;
+  font-size: 12px; padding: 6px 9px; border-radius: 6px; white-space: pre; box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+}

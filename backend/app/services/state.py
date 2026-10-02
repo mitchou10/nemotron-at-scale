@@ -4,6 +4,7 @@ import dataclasses
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -58,6 +59,18 @@ class StreamState:
     ended_at: datetime | None = None
 
 
+@dataclass
+class InstanceSample:
+    """One measurement of an instance, kept to draw its history (uptime, latency, load)."""
+
+    instance: str
+    up: bool
+    active_streams: int
+    max_streams: int
+    latency_ms: float | None = None
+    at: datetime = field(default_factory=utcnow)
+
+
 class StateStore(ABC):
     @abstractmethod
     async def save_instance(self, state: InstanceState) -> None: ...
@@ -69,7 +82,21 @@ class StateStore(ABC):
     async def list_instances(self) -> list[InstanceState]: ...
 
     @abstractmethod
-    async def list_streams(self, *, active_only: bool = False) -> list[StreamState]: ...
+    async def list_streams(
+        self, *, active_only: bool = False, since: datetime | None = None
+    ) -> list[StreamState]:
+        """Saved streams, oldest first; `since` keeps those started at or after that time."""
+
+    @abstractmethod
+    async def save_sample(self, sample: InstanceSample) -> None: ...
+
+    @abstractmethod
+    async def list_samples(self, since: datetime) -> list[InstanceSample]:
+        """Samples taken at or after `since`, oldest first."""
+
+    @abstractmethod
+    async def prune_samples(self, before: datetime) -> int:
+        """Delete the samples older than `before`; return how many."""
 
     @abstractmethod
     async def interrupt_active_streams(self) -> int:
@@ -80,6 +107,7 @@ class InMemoryStateStore(StateStore):
     def __init__(self) -> None:
         self._instances: dict[str, InstanceState] = {}
         self._streams: dict[str, StreamState] = {}
+        self._samples: deque[InstanceSample] = deque()
 
     async def save_instance(self, state: InstanceState) -> None:
         self._instances[state.key] = dataclasses.replace(state)
@@ -90,11 +118,27 @@ class InMemoryStateStore(StateStore):
     async def list_instances(self) -> list[InstanceState]:
         return sorted(self._instances.values(), key=lambda s: (s.priority, s.key))
 
-    async def list_streams(self, *, active_only: bool = False) -> list[StreamState]:
+    async def list_streams(
+        self, *, active_only: bool = False, since: datetime | None = None
+    ) -> list[StreamState]:
         streams = sorted(self._streams.values(), key=lambda s: s.started_at)
         if active_only:
-            return [s for s in streams if s.status in ACTIVE_STREAM_STATUSES]
+            streams = [s for s in streams if s.status in ACTIVE_STREAM_STATUSES]
+        if since:
+            streams = [s for s in streams if s.started_at >= since]
         return streams
+
+    async def save_sample(self, sample: InstanceSample) -> None:
+        self._samples.append(dataclasses.replace(sample))
+
+    async def list_samples(self, since: datetime) -> list[InstanceSample]:
+        return [dataclasses.replace(s) for s in self._samples if s.at >= since]
+
+    async def prune_samples(self, before: datetime) -> int:
+        kept = deque(s for s in self._samples if s.at >= before)
+        removed = len(self._samples) - len(kept)
+        self._samples = kept
+        return removed
 
     async def interrupt_active_streams(self) -> int:
         active = await self.list_streams(active_only=True)

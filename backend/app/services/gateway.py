@@ -15,6 +15,7 @@ import time
 import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from datetime import timedelta
 
 import httpx
 
@@ -24,11 +25,13 @@ from app.services.nemo_speech import NemoSpeechTranscriber
 from app.services.resilient import BYTES_PER_SECOND, ResilientSession
 from app.services.state import (
     InMemoryStateStore,
+    InstanceSample,
     InstanceState,
     InstanceStatus,
     StateStore,
     StreamRecorder,
     safely,
+    utcnow,
 )
 from app.services.transcription import (
     InstanceClient,
@@ -144,6 +147,8 @@ class Gateway:
         max_latency_ms: float = 0.0,
         buffer_seconds: int = 30,
         max_failovers: int = 2,
+        history_interval: float = 30.0,
+        history_retention: timedelta = timedelta(hours=168),
     ) -> None:
         self._discovery = discovery
         self._api_key = api_key
@@ -156,6 +161,10 @@ class Gateway:
         self._max_latency_ms = max_latency_ms
         self._buffer_seconds = buffer_seconds
         self._max_failovers = max_failovers
+        self._history_interval = history_interval
+        self._history_retention = history_retention
+        self._last_sample: float | None = None
+        self._last_prune: float | None = None
         self._instances: dict[str, Instance] = {}
         self._client: httpx.AsyncClient | None = None
         self._task: asyncio.Task[None] | None = None
@@ -184,6 +193,31 @@ class Gateway:
         await self._discover()
         await asyncio.gather(*(self._probe(i) for i in self._instances.values()))
         await asyncio.gather(*(self._save(i) for i in self._instances.values()))
+        await self._record_history()
+
+    async def _record_history(self) -> None:
+        """Sample every instance, at most once per `history_interval`, for the status page."""
+        if self._history_interval <= 0:
+            return
+        now = time.monotonic()
+        if self._last_sample is not None and now - self._last_sample < self._history_interval:
+            return
+        self._last_sample = now
+        for i in self._instances.values():
+            sample = InstanceSample(
+                instance=i.key,
+                up=i.healthy and i.present,
+                active_streams=i.active,
+                max_streams=i.max_streams,
+                latency_ms=None if i.latency_ms is None else round(i.latency_ms, 1),
+            )
+            await safely(self.store.save_sample(sample), "save instance sample")
+        # Old samples are dropped about once an hour.
+        if self._last_prune is None or now - self._last_prune >= 3600:
+            self._last_prune = now
+            await safely(
+                self.store.prune_samples(utcnow() - self._history_retention), "prune samples"
+            )
 
     async def _discover(self) -> None:
         found = {d.key: d for d in await self._discovery.discover()}

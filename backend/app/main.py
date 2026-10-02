@@ -2,9 +2,12 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import asr_router, audio_router, health_router, metrics_router
 from app.config import settings
@@ -18,6 +21,8 @@ from app.services.discovery import (
 from app.services.gateway import Gateway
 from app.services.state import InMemoryStateStore, StateStore
 from app.services.state_sql import SqlStateStore
+
+STATUS_DIR = Path(__file__).parent / "static" / "status"
 
 
 @asynccontextmanager
@@ -54,6 +59,8 @@ def build_gateway() -> Gateway | None:
         max_latency_ms=settings.ASR_MAX_LATENCY_MS,
         buffer_seconds=settings.ASR_BUFFER_SECONDS,
         max_failovers=settings.ASR_MAX_FAILOVERS,
+        history_interval=settings.ASR_HISTORY_INTERVAL_S,
+        history_retention=timedelta(hours=settings.ASR_HISTORY_RETENTION_HOURS),
     )
 
 
@@ -90,6 +97,9 @@ def create_app() -> FastAPI:
     app.include_router(audio_router, prefix=api_prefix)
     app.include_router(asr_router, prefix=api_prefix)
     app.include_router(metrics_router)
+
+    # Status page (static files, no build step): /status/
+    app.mount("/status", StaticFiles(directory=STATUS_DIR, html=True), name="status")
 
     return app
 

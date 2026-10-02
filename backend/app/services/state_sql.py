@@ -2,13 +2,15 @@
 
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asr import AsrInstance, AsrStream
+from app.models.asr import AsrInstance, AsrSample, AsrStream
 from app.services.state import (
     ACTIVE_STREAM_STATUSES,
+    InstanceSample,
     InstanceState,
     InstanceStatus,
     StateStore,
@@ -55,10 +57,14 @@ class SqlStateStore(StateStore):
             for r in rows
         ]
 
-    async def list_streams(self, *, active_only: bool = False) -> list[StreamState]:
+    async def list_streams(
+        self, *, active_only: bool = False, since: datetime | None = None
+    ) -> list[StreamState]:
         query = select(AsrStream).order_by(AsrStream.started_at)
         if active_only:
             query = query.where(AsrStream.status.in_([str(s) for s in ACTIVE_STREAM_STATUSES]))
+        if since:
+            query = query.where(AsrStream.started_at >= since)
         async with self._session_factory() as session:
             rows = (await session.scalars(query)).all()
         return [
@@ -83,5 +89,35 @@ class SqlStateStore(StateStore):
                 .where(AsrStream.status.in_([str(s) for s in ACTIVE_STREAM_STATUSES]))
                 .values(status=str(StreamStatus.INTERRUPTED), ended_at=now, updated_at=now)
             )
+            await session.commit()
+        return int(result.rowcount)  # type: ignore[attr-defined]
+
+    async def save_sample(self, sample: InstanceSample) -> None:
+        async with self._session_factory() as session:
+            session.add(AsrSample(**asdict(sample)))
+            await session.commit()
+
+    async def list_samples(self, since: datetime) -> list[InstanceSample]:
+        async with self._session_factory() as session:
+            rows = (
+                await session.scalars(
+                    select(AsrSample).where(AsrSample.at >= since).order_by(AsrSample.at)
+                )
+            ).all()
+        return [
+            InstanceSample(
+                instance=r.instance,
+                up=r.up,
+                active_streams=r.active_streams,
+                max_streams=r.max_streams,
+                latency_ms=r.latency_ms,
+                at=r.at,
+            )
+            for r in rows
+        ]
+
+    async def prune_samples(self, before: datetime) -> int:
+        async with self._session_factory() as session:
+            result = await session.execute(delete(AsrSample).where(AsrSample.at < before))
             await session.commit()
         return int(result.rowcount)  # type: ignore[attr-defined]

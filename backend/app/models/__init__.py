@@ -1,5 +1,5 @@
 """ORM models (imported so that Alembic sees every table)."""
 
-from app.models.asr import AsrInstance, AsrStream
+from app.models.asr import AsrInstance, AsrSample, AsrStream
 
-__all__ = ["AsrInstance", "AsrStream"]
+__all__ = ["AsrInstance", "AsrSample", "AsrStream"]
