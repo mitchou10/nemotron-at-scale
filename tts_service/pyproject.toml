@@ -1,6 +1,6 @@
 [project]
 name = "tts-service"
-version = "0.2.0-rc"
+version = "0.3.0"
 description = "Standalone text-to-speech server (Piper) with an OpenAI-compatible /v1/audio/speech route"
 readme = "README.md"
 requires-python = ">=3.11"
