@@ -183,6 +183,16 @@ Le dépôt `github-workflow` doit être public, ou autoriser ce dépôt (Setting
 [helm-template.sh](https://github.com/this-is-tobi/tools/blob/main/shell/helm-template.sh) de this-is-tobi.
 Le secret `nemotron-database` (clé `url`, URL SQLAlchemy asyncpg) est à créer avant l'installation :
 `helm install nemotron ./helm`. Le README du chart se régénère avec `helm-docs -c helm`.
+
+**Tester le chart tel quel** (cluster local kind, minikube, k3d...) : [helm/values/common-values.yaml](helm/values/common-values.yaml)
+est autonome, il crée aussi un PostgreSQL de test et son secret :
+
+```bash
+helm upgrade --install nemotron ./helm -f helm/values/common-values.yaml -n nemotron --create-namespace
+kubectl -n nemotron port-forward svc/nemotron-frontend 3000:80    # http://localhost:3000
+```
+
+Les images viennent de `ghcr.io` : rendez les packages publics ou ajoutez un `imagePullSecret` (voir l'en-tête du fichier).
 À chaque release, `cd.yml` met à jour `appVersion` et `version` du chart (commit direct sur la branche), puis
 publie le chart en OCI sur GHCR. `ci/configs/ct.yaml` configure le lint (chart-testing + helm-docs).
 
