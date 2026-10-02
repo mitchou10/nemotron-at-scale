@@ -1,0 +1,23 @@
+{{- if .Values.enabled }}
+{{- if .Values.vosk.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk-metrics") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk-metrics")) | nindent 4 }}
+  {{- if .Values.vosk.metrics.service.labels }}
+    {{- toYaml .Values.vosk.metrics.service.labels | nindent 4 }}
+  {{- end }}
+  {{- if .Values.vosk.metrics.service.annotations }}
+  annotations: {{- toYaml .Values.vosk.metrics.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.vosk.metrics.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.vosk.metrics.service.port }}
+    targetPort: {{ .Values.vosk.metrics.service.targetPort }}
+    protocol: TCP
+    name: {{ .Values.vosk.metrics.service.portName | default "metrics" }}
+  selector: {{- include "helper.selectorLabels" (dict "root" . "componentName" "vosk") | nindent 4 }}
+{{- end }}
+{{- end }}

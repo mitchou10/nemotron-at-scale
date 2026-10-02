@@ -1,0 +1,52 @@
+{{- if .Values.enabled }}
+{{- if and .Values.vosk.metrics.enabled .Values.vosk.metrics.serviceMonitor.enabled }}
+{{- $metricSvcPort := .Values.vosk.metrics.service.portName | default .Values.vosk.metrics.service.port -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk-metrics") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk")) | nindent 4 }}
+  {{- if .Values.vosk.metrics.serviceMonitor.labels }}
+    {{- toYaml .Values.vosk.metrics.serviceMonitor.labels | nindent 4 }}
+  {{- end }}
+  {{- if .Values.vosk.metrics.serviceMonitor.annotations }}
+  annotations: {{- toYaml .Values.vosk.metrics.serviceMonitor.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  endpoints:
+  {{- range .Values.vosk.metrics.serviceMonitor.endpoints }}
+  - port: {{ $metricSvcPort }}
+    path: {{ .path }}
+    honorLabels: {{ .honorLabels }}
+    {{- if and .basicAuth .basicAuth.username .basicAuth.password }}
+    basicAuth: {{- toYaml .basicAuth | nindent 6 }}
+    {{- end }}
+    {{- if and .bearerTokenSecret .bearerTokenSecret.name .bearerTokenSecret.key }}
+    bearerTokenSecret: {{- toYaml .bearerTokenSecret | nindent 6 }}
+    {{- end }}
+    {{- if .interval }}
+    interval: {{ .interval }}
+    {{- end }}
+    {{- if .scrapeTimeout }}
+    scrapeTimeout: {{ .scrapeTimeout }}
+    {{- end }}
+    {{- if .relabelings }}
+    relabelings: {{- toYaml .relabelings | nindent 6 }}
+    {{- end }}
+    {{- if .metricRelabelings }}
+    metricRelabelings: {{- toYaml .metricRelabelings | nindent 6 }}
+    {{- end }}
+    {{- if .scheme }}
+    scheme: {{ .scheme }}
+    {{- end }}
+    {{- if .tlsConfig }}
+    tlsConfig: {{- toYaml .tlsConfig | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace | quote }}
+  selector:
+    matchLabels: {{- include "helper.selectorLabels" (dict "root" . "componentName" "vosk-metrics") | nindent 6 }}
+{{- end }}
+{{- end }}

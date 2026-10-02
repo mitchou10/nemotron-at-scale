@@ -1,0 +1,53 @@
+{{- if .Values.enabled }}
+{{- if .Values.vosk.ingress.enabled -}}
+{{- $fullNameApp := include "helper.componentFullname" (dict "root" . "componentName" "vosk") -}}
+{{- $svcPortApp := .Values.vosk.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk")) | nindent 4 }}
+  {{- if .Values.vosk.ingress.labels }}
+    {{- toYaml .Values.vosk.ingress.labels | nindent 4 }}
+  {{- end }}
+  {{- if .Values.vosk.ingress.annotations }}
+  annotations:
+    {{- tpl (toYaml .Values.vosk.ingress.annotations) . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.vosk.ingress.className }}
+  ingressClassName: {{ .Values.vosk.ingress.className }}
+  {{- end }}
+  {{- if gt (len .Values.vosk.ingress.tls) 0 }}
+  tls:
+  {{- range .Values.vosk.ingress.tls }}
+  - hosts:
+    {{- range .hosts }}
+    - {{ . | quote }}
+    {{- end }}
+    secretName: {{ .secretName | default (printf "%s-%s" $fullNameApp "tls") | quote }}
+  {{- end }}
+  {{- end }}
+  rules:
+  {{- range .Values.vosk.ingress.hosts }}
+  - host: {{ .name | quote }}
+    http:
+      paths:
+      {{- range .paths }}
+      - path: {{ .path | default "/" }}
+        pathType: {{ .pathType | default "Prefix" }}
+        backend:
+          service:
+          {{- if .backend }}
+            name: {{ .backend.serviceName | default $fullNameApp }}
+            port:
+              number: {{ .backend.portNumber | default $svcPortApp }}
+          {{- else }}
+            name: {{ $fullNameApp }}
+            port:
+              number: 80
+          {{- end }}
+      {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

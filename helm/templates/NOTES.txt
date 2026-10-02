@@ -1,0 +1,57 @@
+{{- $backend := include "helper.componentFullname" (dict "root" . "componentName" "backend") -}}
+Release "{{ .Release.Name }}" has been deployed in namespace "{{ .Release.Namespace }}".
+
+================================================================================
+{{- if not .Values.enabled }}
+
+NOTE: `enabled` is false, so this release intentionally contains no resource.
+{{- else }}
+
+Check rollout status:
+  kubectl rollout status {{ .Values.backend.deploymentType | lower }}/{{ $backend }} -n {{ .Release.Namespace }} -w
+
+View all resources:
+  kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Follow logs in real-time:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ $backend }} -f
+{{- if .Values.backend.service.enabled }}
+
+Port-forward to access the service locally:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ $backend }} 8080:{{ .Values.backend.service.port }}
+  Access at: http://localhost:8080
+{{- end }}
+
+{{- if .Values.jobs }}
+
+Jobs status:
+  kubectl get jobs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+View specific job logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=<job-name> -f
+{{- end }}
+
+{{- if .Values.cronjobs }}
+
+CronJobs status:
+  kubectl get cronjobs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+View last CronJob run:
+  kubectl describe cronjob <cronjob-name> -n {{ .Release.Namespace }}
+{{- end }}
+
+{{- if .Values.backend.ingress.enabled }}
+
+Ingress resources:
+  kubectl get ingress -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+{{- end }}
+
+{{- if .Values.backend.metrics.enabled }}
+
+Metrics enabled (ServiceMonitor):
+  kubectl get servicemonitor -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+{{- end }}
+{{- end }}
+
+For more information and troubleshooting:
+  https://github.com/this-is-tobi/helm-charts/tree/main/template

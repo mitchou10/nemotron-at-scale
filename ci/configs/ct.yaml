@@ -1,0 +1,16 @@
+remote: origin
+target-branch: main
+# The chart sits at the repository root as `helm/`, so the scanned directory is the root itself;
+# chart-testing treats each subdirectory holding a Chart.yaml as a chart and ignores the rest.
+chart-dirs:
+  - .
+# The chart has no dependencies yet: declare plain-HTTP repositories here when it gets some.
+chart-repos: []
+helm-extra-args: ""
+validate-chart-schema: true
+validate-chart-values: true
+validate-maintainers: false
+validate-yaml: true
+exclude-deprecated: true
+excluded-charts: []
+debug: true

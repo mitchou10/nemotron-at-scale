@@ -1,0 +1,10 @@
+{{- if .Values.enabled }}
+{{- if and .Values.vosk.serviceAccount.enabled .Values.vosk.serviceAccount.clusterRole.create .Values.vosk.serviceAccount.clusterRole.rules }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk")) | nindent 4 }}
+rules: {{- toYaml .Values.vosk.serviceAccount.clusterRole.rules | nindent 0 }}
+{{- end }}
+{{- end }}

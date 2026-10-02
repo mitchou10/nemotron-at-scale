@@ -1,0 +1,26 @@
+{{- if .Values.enabled }}
+{{- /* Not gated on `deploymentType`: every supported kind (Deployment/StatefulSet/DaemonSet) can
+sit behind a Service, and `service.enabled` is the switch for components that take no traffic.
+This matches metrics.yaml, which is gated the same way. */ -}}
+{{- if .Values.vosk.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk")) | nindent 4 }}
+spec:
+  type: {{ .Values.vosk.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.vosk.service.port | default 80 }}
+    targetPort: {{ .Values.vosk.containerPortName | default .Values.vosk.containerPort | default 8080 }}
+    protocol: {{ .Values.vosk.service.protocol | default "TCP" }}
+    {{- if and (eq .Values.vosk.service.type "NodePort") .Values.vosk.service.nodePort }}
+    nodePort: {{ .Values.vosk.service.nodePort }}
+    {{- end }}
+    name: {{ .Values.vosk.service.portName | default "http" }}
+  {{- if .Values.vosk.service.extraPorts -}}
+  {{- toYaml .Values.vosk.service.extraPorts | nindent 2 -}}
+  {{- end }}
+  selector: {{- include "helper.selectorLabels" (dict "root" . "componentName" "vosk") | nindent 4 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,25 @@
+{{- if .Values.enabled }}
+{{- if eq .Values.vosk.deploymentType "Deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helper.componentFullname" (dict "root" . "componentName" "vosk") }}
+  labels: {{- (include "helper.labels" (dict "root" . "componentName" "vosk")) | nindent 4 }}
+spec:
+  {{- if not .Values.vosk.autoscaling.enabled }}
+  replicas: {{ .Values.vosk.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.vosk.revisionHistoryLimit | default 10 }}
+  selector:
+    matchLabels: {{- include "helper.selectorLabels" (dict "root" . "componentName" "vosk") | nindent 6 }}
+  strategy:
+    type: {{ .Values.vosk.strategy.type }}
+    {{- if eq .Values.vosk.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.vosk.strategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.vosk.strategy.rollingUpdate.maxSurge }}
+    {{- end }}
+  template:
+    {{- include "helper.component.podTemplate" (dict "root" . "name" "vosk" "component" .Values.vosk) | nindent 4 }}
+{{- end }}
+{{- end }}
