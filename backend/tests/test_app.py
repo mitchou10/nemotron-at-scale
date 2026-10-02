@@ -10,8 +10,9 @@ from starlette.testclient import TestClient
 from app import db
 from app.config import Settings, get_settings, settings
 from app.main import app, build_gateway, create_app
-from app.services.discovery import DnsDiscovery, StaticDiscovery
+from app.services.discovery import RegistryDiscovery
 from app.services.gateway import Gateway
+from app.services.registry import InMemoryRegistryStore
 from app.services.state import (
     InMemoryStateStore,
     InstanceState,
@@ -20,6 +21,7 @@ from app.services.state import (
     StreamStatus,
 )
 from app.services.state_sql import SqlStateStore
+from tests.discovery_helpers import ListDiscovery
 
 
 def test_lifespan_disposes_engine(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,17 +72,17 @@ def test_get_settings_is_cached() -> None:
 
 
 def test_gateway_disabled_by_default() -> None:
-    assert build_gateway() is None
+    assert build_gateway(InMemoryRegistryStore()) is None
 
 
 def test_gateway_built_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ASR_ENABLED", True)
-    assert isinstance(build_gateway(), Gateway)
+    assert isinstance(build_gateway(InMemoryRegistryStore()), Gateway)
 
 
 def test_lifespan_starts_and_stops_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
     gateway = MagicMock(start=AsyncMock(), stop=AsyncMock(), status=lambda: [{"instance": "x"}])
-    monkeypatch.setattr("app.main.build_gateway", lambda: gateway)
+    monkeypatch.setattr("app.main.build_gateway", lambda registry: gateway)
     with TestClient(app) as client:
         gateway.start.assert_awaited_once()
         assert client.get("/api/v1/asr/instances").json() == [{"instance": "x"}]
@@ -98,7 +100,7 @@ def test_asr_state_routes_empty_when_disabled(ws_client: TestClient) -> None:
 
 def test_asr_state_routes_return_saved_state(ws_client: TestClient) -> None:
     store = InMemoryStateStore()
-    gateway = Gateway(StaticDiscovery([]), store=store)
+    gateway = Gateway(ListDiscovery([]), store=store)
     ws_client.app.state.transcriber = gateway
     asyncio.run(store.save_instance(InstanceState("a:1", "ws://a:1", InstanceStatus.UP, 0, 8)))
     asyncio.run(store.save_stream(StreamState("alice", "a:1")))
@@ -116,23 +118,20 @@ def test_asr_state_routes_return_saved_state(ws_client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
-    ("discovery", "store", "expected_discovery", "expected_store"),
-    [
-        ("dns", "database", DnsDiscovery, SqlStateStore),
-        ("static", "memory", StaticDiscovery, InMemoryStateStore),
-    ],
+    ("store", "expected_store"),
+    [("database", SqlStateStore), ("memory", InMemoryStateStore)],
 )
 def test_gateway_wiring_follows_settings(
-    monkeypatch: pytest.MonkeyPatch,
-    discovery: str,
-    store: str,
-    expected_discovery: type,
-    expected_store: type,
+    monkeypatch: pytest.MonkeyPatch, store: str, expected_store: type
 ) -> None:
     monkeypatch.setattr(settings, "ASR_ENABLED", True)
-    monkeypatch.setattr(settings, "ASR_DISCOVERY", discovery)
     monkeypatch.setattr(settings, "ASR_STATE_STORE", store)
-    gateway = build_gateway()
+    gateway = build_gateway(InMemoryRegistryStore())
     assert gateway is not None
-    assert isinstance(gateway._discovery, expected_discovery)
+    assert isinstance(gateway._discovery, RegistryDiscovery)
     assert isinstance(gateway.store, expected_store)
+
+
+def test_no_gateway_when_asr_is_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ASR_ENABLED", False)
+    assert build_gateway(InMemoryRegistryStore()) is None

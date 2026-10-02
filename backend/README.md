@@ -33,7 +33,9 @@ backend/
 │       ├── transcription.py  # Interfaces de transcription (indépendantes du modèle)
 │       ├── nemo_speech.py    # Client du serveur `nemo-speech serve`
 │       ├── vosk.py           # Client d'un serveur Vosk (Kaldi)
-│       ├── discovery.py      # Discovery abstraite, StaticDiscovery, DnsDiscovery
+│       ├── discovery.py      # Discovery abstraite, RegistryDiscovery
+│       ├── registry.py       # registre des instances (enregistrement, heartbeat, TTL)
+│       ├── tts_pool.py       # gateway TTS : instance la moins chargée
 │       ├── state.py          # StateStore abstrait, en mémoire, StreamRecorder
 │       ├── state_sql.py      # StateStore en base (SQLAlchemy)
 │       ├── metrics.py        # Métriques Prometheus par instance
@@ -122,7 +124,10 @@ alembic downgrade -1
 | GET     | `/api/v1/health`         | Liveness probe       |
 | GET     | `/api/v1/health/ready`   | Readiness probe      |
 | GET     | `/api/v1/asr/instances`  | État des instances ASR (gateway) |
-| POST    | `/api/v1/audio/speech`   | Synthèse vocale compatible OpenAI (relais vers `tts_service`, `TTS_ENABLED=true`) |
+| PUT     | `/api/v1/registry/instances/{id}` | Enregistrement et heartbeat d'une instance (jeton `REGISTRY_TOKEN`) |
+| DELETE  | `/api/v1/registry/instances/{id}` | Désenregistrement |
+| GET     | `/api/v1/registry/instances` | Instances enregistrées et vivantes (`?kind=tts`) |
+| POST    | `/api/v1/audio/speech`   | Synthèse vocale compatible OpenAI (gateway : instance `tts_service` la moins chargée parmi celles enregistrées) |
 | GET     | `/api/v1/audio/voices`   | Voix installées sur le service TTS |
 | GET     | `/api/v1/asr/history?hours=24&buckets=90` | Disponibilité, latence et charge de chaque instance par tranche de temps, et totaux de flux |
 | WS      | `/api/v1/ws/audio/{client_id}` | Flux audio PCM 16 kHz mono 16-bit, id unique par client |
@@ -136,16 +141,16 @@ même façon et peut les mélanger. Nemo :
 (runtime C++, GGUF quantifié Q8). Le backend embarque une **gateway** ([gateway.py](app/services/gateway.py)) :
 
 - **Découverte** ([discovery.py](app/services/discovery.py)) : classe abstraite `Discovery` (méthode
-  `discover()`). `StaticDiscovery` prend une liste d'`Endpoint(url, max_streams)` telle quelle ;
-  `DnsDiscovery` (défaut, `ASR_DISCOVERY=dns`) résout chaque hostname vers toutes les IP de ses
-  réplicas (`--scale`). CPU et GPU peuvent coexister.
+  `discover()`). `RegistryDiscovery` lit le **registre** ([registry.py](app/services/registry.py)) : les instances
+  s'y enregistrent (`PUT /api/v1/registry/instances/<id>` avec `kind`, `url`, `max_streams`, `priority`), envoient un
+  heartbeat et se désenregistrent (`DELETE`) à l'arrêt ; sans heartbeat pendant `REGISTRY_TTL_S` (30 s), elles ne sont
+  plus utilisées. Le registre est en base (`registered_instances`), partagé par les réplicas du backend, et protégé
+  par `REGISTRY_TOKEN`. CPU, GPU et Vosk peuvent coexister.
 - **Latence** : chaque instance est sondée (`GET /ready`, toutes les `ASR_PROBE_INTERVAL_S` s) ;
   la latence est lissée (moyenne exponentielle) et une instance qui ne répond pas est écartée.
 - **Remplissage** : un nouveau flux va à la première instance saine qui n'a pas atteint sa limite,
-  dans l'ordre de `ASR_URL`, puis par adresse pour les réplicas d'un même service ; la suivante
-  n'est utilisée qu'une fois la précédente pleine, et un flux terminé libère sa place.
-  Limite par instance : `ASR_MAX_STREAMS_PER_INSTANCE`, ou par URL avec `#N`
-  (ex. `ws://asr-gpu:8080/v1/audio/transcriptions/realtime#16`).
+  dans l'ordre de la `priority` annoncée, puis par adresse ; la suivante n'est utilisée qu'une fois la
+  précédente pleine, et un flux terminé libère sa place. La limite par instance est son `max_streams` annoncé.
 - **Seuil de latence** (optionnel) : avec `ASR_MAX_LATENCY_MS`, une instance plus lente est ignorée
   tant qu'une instance rapide a de la place (sinon la plus rapide des lentes est utilisée).
 - Si la connexion à une instance échoue, la suivante est essayée (failover).
@@ -201,7 +206,7 @@ Le client envoie des chunks binaires PCM16 (16 kHz, mono) ; le serveur répond e
 docker compose --profile cpu up --build             # instance(s) CPU
 docker compose --profile gpu up --build             # instance(s) GPU (NVIDIA container toolkit)
 docker compose --profile vosk up                    # instance(s) Vosk (Kaldi)
-docker compose --profile cpu --profile vosk up      # mélange : la gateway remplit dans l'ordre de ASR_URL
+docker compose --profile cpu --profile vosk up      # mélange : la gateway remplit par priorité (gpu, cpu, vosk)
 docker compose --profile vosk up --scale asr-vosk=4 # plusieurs instances Vosk
 docker compose --profile cpu up --scale asr-cpu=3   # plusieurs instances
 ```
@@ -214,8 +219,8 @@ ne sont pas publiées sur l'hôte : seul le backend y accède.
 **Vosk** : service séparé et indépendant du backend, dans [vosk_service/](../vosk_service/README.md).
 Il expose les mêmes routes que `nemo-speech serve` (`/health`, `/ready`, `/v1/models`,
 `POST /v1/audio/transcriptions`, WebSocket `/v1/audio/transcriptions/realtime`, page de démonstration
-sur `/`, `/metrics`) ; la gateway l'utilise donc comme une instance Nemo, avec une simple URL
-`ws://asr-vosk:8080/v1/audio/transcriptions/realtime` dans `ASR_URL`. Profil compose `vosk`,
+sur `/`, `/metrics`) ; la gateway l'utilise donc comme une instance Nemo ; il s'enregistre lui-même
+auprès du backend (`VOSK_REGISTRY_URL`). Profil compose `vosk`,
 modèle et langue choisis par `VOSK_MODEL_NAME` (français léger par défaut), plusieurs instances avec
 `--scale asr-vosk=N`. Le modèle est téléchargé au premier démarrage dans le volume `vosk_models`.
 Vosk n'a pas de modèle multilingue : une instance par langue. Précision inférieure à Nemotron, mais
@@ -243,7 +248,7 @@ uv run python scripts/bench_asr.py gateway localhost:8000 -n 4,16      # tout le
 
 Un N est « tenable » s'il n'y a aucune erreur, si le p95 de `final_lag` reste ≤ `--max-lag` (2 s) et si
 les chunks en retard restent ≤ `--max-late` (5 %). Le résultat de `--find-capacity` est la valeur à
-mettre comme limite de l'instance (`#N` dans `ASR_URL`). En production, le même retard par chunk est
+mettre comme limite de l'instance (`VOSK_MAX_STREAMS`, ou `max_streams` annoncé). En production, le même retard par chunk est
 visible en continu dans Prometheus : `asr_chunk_latency_seconds{instance}` (Vosk).
 
 Mesure réelle d'une instance Vosk (CPU, machine de 12 cœurs, extrait de 11 s, chunks de 100 ms) :

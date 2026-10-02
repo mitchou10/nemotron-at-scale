@@ -9,10 +9,10 @@ from dataclasses import dataclass, field
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from app.services.discovery import DnsDiscovery, parse_endpoints
 from app.services.gateway import Gateway
 from app.services.transcription import TranscriberUnavailableError, TranscriptEvent
 from app.services.vosk import ENDPOINT_KEEP_MS, EOF, VoskTranscriber
+from tests.discovery_helpers import discovery_for
 from tests.test_gateway import fake_instance, running, url
 
 
@@ -220,7 +220,7 @@ async def test_dropped_connection_raises() -> None:
 
 def mixed_gateway(nemo_port: int, vosk_port: int, nemo_limit: int = 8) -> Gateway:
     urls = f"{url(nemo_port)}#{nemo_limit},vosk://127.0.0.1:{vosk_port}"
-    return Gateway(DnsDiscovery(parse_endpoints(urls, 8)))
+    return Gateway(discovery_for(urls, 8))
 
 
 async def test_vosk_instance_is_discovered_probed_and_reported() -> None:
@@ -235,7 +235,7 @@ async def test_vosk_instance_is_discovered_probed_and_reported() -> None:
 
 
 async def test_down_vosk_instance_is_unhealthy() -> None:
-    gw = Gateway(DnsDiscovery(parse_endpoints("vosk://127.0.0.1:1", 8)))
+    gw = Gateway(discovery_for("vosk://127.0.0.1:1", 8))
     async with running(gw):
         [entry] = gw.status()
     assert (entry["kind"], entry["healthy"]) == ("vosk", False)
@@ -294,7 +294,7 @@ async def test_latency_is_reported_for_every_audio_chunk_but_not_for_eof() -> No
 
 async def test_gateway_publishes_vosk_chunk_latency_per_instance() -> None:
     async with fake_vosk(reply_delay=0.02) as vosk:
-        gw = Gateway(DnsDiscovery(parse_endpoints(f"vosk://127.0.0.1:{vosk.port}", 8)))
+        gw = Gateway(discovery_for(f"vosk://127.0.0.1:{vosk.port}", 8))
         async with running(gw):
             labels = {"instance": f"127.0.0.1:{vosk.port}"}
             session = await gw.open_session("alice")

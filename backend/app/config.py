@@ -29,19 +29,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://nemotron:nemotron@db:5432/nemotron"
     DATABASE_URL_TEST: str = "postgresql+asyncpg://nemotron:nemotron@db:5432/nemotron_test"
 
-    # Live transcription: URL of a `nemo-speech serve` realtime WebSocket
+    # Live transcription: the gateway routes streams to the instances registered in the registry
     ASR_ENABLED: bool = False
-    # Comma-separated realtime WebSocket URLs, in fill order; each hostname is resolved to all
-    # its IPs. Append `#N` to a URL to set its per-instance stream limit (default below).
-    ASR_URL: str = (
-        "ws://asr-gpu:8080/v1/audio/transcriptions/realtime,"
-        "ws://asr-cpu:8080/v1/audio/transcriptions/realtime,"
-        "ws://asr-vosk:8080/v1/audio/transcriptions/realtime"
-    )
     ASR_API_KEY: str | None = None
-    ASR_DISCOVERY: Literal["dns", "static"] = "dns"
     ASR_STATE_STORE: Literal["database", "memory"] = "database"
-    ASR_MAX_STREAMS_PER_INSTANCE: int = 8
     ASR_PROBE_INTERVAL_S: float = 5.0
     ASR_MAX_LATENCY_MS: float = 0.0  # 0 = never skip slow instances
     # Resume on another instance if one drops: audio kept per stream, and failover budget.
@@ -51,11 +42,17 @@ class Settings(BaseSettings):
     ASR_HISTORY_INTERVAL_S: float = 30.0
     ASR_HISTORY_RETENTION_HOURS: int = 168
 
-    # Text to speech: URL of the OpenAI-compatible `tts_service` the backend relays to
-    TTS_ENABLED: bool = False
-    TTS_URL: str = "http://tts:8080"
+    # Text to speech: key sent to the registered `tts_service` instances, and the time a request
+    # may take
     TTS_API_KEY: str | None = None
     TTS_TIMEOUT_S: float = 60.0
+
+    # Registry: workers (transcription and text-to-speech servers) register themselves here.
+    # Without a token the registry is open: set one outside local tests.
+    REGISTRY_TOKEN: str | None = None
+    # An instance whose last heartbeat is older than this is no longer routed to.
+    REGISTRY_TTL_S: float = 30.0
+    REGISTRY_STORE: Literal["database", "memory"] = "database"
 
     # CORS
     CORS_ORIGINS: list[AnyHttpUrl] | list[str] = Field(

@@ -1,17 +1,17 @@
 """Discovery tests."""
 
+from datetime import timedelta
+
 import pytest
 
-from app.services import discovery as discovery_module
 from app.services.discovery import (
     DiscoveredInstance,
     Discovery,
-    DnsDiscovery,
-    Endpoint,
-    StaticDiscovery,
-    parse_endpoints,
-    resolve_ipv4,
+    RegistryDiscovery,
+    describe_instance,
 )
+from app.services.registry import InMemoryRegistryStore, RegisteredInstance
+from app.services.state import utcnow
 
 PATH = "/v1/audio/transcriptions/realtime"
 
@@ -21,78 +21,55 @@ def test_discovery_is_abstract() -> None:
         Discovery()  # type: ignore[abstract]
 
 
-async def test_static_discovery_one_instance_per_endpoint_in_order() -> None:
-    discovery = StaticDiscovery(
-        [Endpoint(f"ws://gpu:8080{PATH}", 16), Endpoint(f"wss://cpu.example{PATH}", 4)]
+def test_describe_nemo_instance_is_probed_over_http() -> None:
+    assert describe_instance("nemo", f"ws://10.0.0.5:8080{PATH}", 16, 2) == DiscoveredInstance(
+        key="10.0.0.5:8080",
+        url=f"ws://10.0.0.5:8080{PATH}",
+        probe_url="http://10.0.0.5:8080/ready",
+        max_streams=16,
+        priority=2,
+        kind="nemo",
     )
-    assert await discovery.discover() == [
-        DiscoveredInstance("gpu:8080", f"ws://gpu:8080{PATH}", "http://gpu:8080/ready", 16, 0),
-        DiscoveredInstance(
-            "cpu.example:443",
-            f"wss://cpu.example:443{PATH}",
-            "https://cpu.example:443/ready",
-            4,
-            1,
-        ),
+
+
+def test_describe_secure_instance_and_default_ports() -> None:
+    secure = describe_instance("nemo", f"wss://asr{PATH}", 4)
+    assert (secure.key, secure.probe_url) == ("asr:443", "https://asr:443/ready")
+    plain = describe_instance("nemo", f"ws://asr{PATH}", 4)
+    assert plain.key == "asr:80"
+
+
+def test_describe_vosk_instance_is_probed_with_its_own_url() -> None:
+    vosk = describe_instance("vosk", f"ws://asr-vosk:8080{PATH}", 12)
+    assert vosk.kind == "vosk"
+    assert vosk.probe_url == vosk.url == f"ws://asr-vosk:8080{PATH}"
+
+
+def test_describe_drops_the_fragment() -> None:
+    assert describe_instance("nemo", f"ws://a:1{PATH}#16", 4).url == f"ws://a:1{PATH}"
+
+
+async def test_registry_discovery_returns_alive_asr_instances_in_fill_order() -> None:
+    registry = InMemoryRegistryStore()
+    await registry.upsert(RegisteredInstance("b", "vosk", f"ws://b:8080{PATH}", 12, priority=1))
+    await registry.upsert(RegisteredInstance("a", "nemo", f"ws://a:8080{PATH}", 16, priority=0))
+    await registry.upsert(RegisteredInstance("t", "tts", "http://t:8080", 4))
+    stale = RegisteredInstance("old", "nemo", f"ws://old:8080{PATH}", 4)
+    stale.last_seen = utcnow() - timedelta(seconds=60)
+    await registry.upsert(stale)
+
+    found = await RegistryDiscovery(registry, ttl_s=30).discover()
+
+    assert [(d.key, d.kind, d.max_streams, d.priority) for d in found] == [
+        ("a:8080", "nemo", 16, 0),
+        ("b:8080", "vosk", 12, 1),
     ]
 
 
-async def test_static_discovery_defaults_port_to_80() -> None:
-    [instance] = await StaticDiscovery([Endpoint(f"ws://asr{PATH}", 1)]).discover()
-    assert instance.key == "asr:80"
-
-
-async def test_dns_discovery_expands_hostname_to_each_address(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_resolve(host: str, port: int) -> list[str]:
-        return {"gpu": ["10.0.0.2", "10.0.0.1"], "cpu": []}[host]
-
-    monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-    found = await DnsDiscovery(
-        [Endpoint(f"ws://gpu:8080{PATH}", 16), Endpoint(f"ws://cpu:8080{PATH}", 4)]
-    ).discover()
-    assert [(d.key, d.priority, d.max_streams) for d in found] == [
-        ("10.0.0.2:8080", 0, 16),
-        ("10.0.0.1:8080", 0, 16),
-    ]
-    assert found[0].url == f"ws://10.0.0.2:8080{PATH}"
-    assert found[0].probe_url == "http://10.0.0.2:8080/ready"
-
-
-async def test_resolve_ipv4() -> None:
-    assert await resolve_ipv4("127.0.0.1", 80) == ["127.0.0.1"]
-    assert await resolve_ipv4("does-not-exist.invalid", 80) == []
-
-
-def test_parse_endpoints() -> None:
-    assert parse_endpoints(f"ws://a:1{PATH}#16, ws://b:2{PATH} ,,", 8) == [
-        Endpoint(f"ws://a:1{PATH}", 16),
-        Endpoint(f"ws://b:2{PATH}", 8),
-    ]
-    assert parse_endpoints("", 8) == []
-
-
-def test_parse_vosk_endpoint_defaults_to_port_2700() -> None:
-    assert parse_endpoints("vosk://asr-vosk#4,vosk://other:2800", 8) == [
-        Endpoint("ws://asr-vosk:2700", 4, "vosk"),
-        Endpoint("ws://other:2800", 8, "vosk"),
-    ]
-
-
-async def test_vosk_instances_are_probed_on_their_own_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_resolve(host: str, port: int) -> list[str]:
-        return ["10.0.0.7"]
-
-    monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-    [found] = await DnsDiscovery(parse_endpoints("vosk://asr-vosk", 8)).discover()
-    assert (found.kind, found.key, found.url, found.probe_url) == (
-        "vosk",
-        "10.0.0.7:2700",
-        "ws://10.0.0.7:2700",
-        "ws://10.0.0.7:2700",
-    )
-    [static] = await StaticDiscovery(parse_endpoints("vosk://asr-vosk", 8)).discover()
-    assert static.kind == "vosk"
+async def test_an_instance_that_unregisters_disappears() -> None:
+    registry = InMemoryRegistryStore()
+    await registry.upsert(RegisteredInstance("a", "nemo", f"ws://a:8080{PATH}", 4))
+    discovery = RegistryDiscovery(registry, ttl_s=30)
+    assert len(await discovery.discover()) == 1
+    await registry.remove("a")
+    assert await discovery.discover() == []

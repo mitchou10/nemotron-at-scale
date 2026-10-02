@@ -5,6 +5,7 @@ import sys
 import pytest
 from starlette.testclient import TestClient
 
+from tests.discovery_helpers import discovery_for
 from tests.test_gateway import (
     Gateway,
     fake_instance,
@@ -117,21 +118,14 @@ async def test_rejection_reasons() -> None:
             assert sample(gw, "asr_streams_rejected_total", reason="busy") == 1
 
 
-async def test_vanished_instance_series_are_removed(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services import discovery as discovery_module
-
+async def test_vanished_instance_series_are_removed() -> None:
     async with fake_instance("a") as a:
-        addresses = ["127.0.0.1"]
-
-        async def fake_resolve(host: str, port: int) -> list[str]:
-            return list(addresses)
-
-        monkeypatch.setattr(discovery_module, "resolve_ipv4", fake_resolve)
-        gw = make_gateway([url(a.port, "svc")])
+        discovery = discovery_for(url(a.port))
+        gw = Gateway(discovery)
         async with running(gw):
             key = f"127.0.0.1:{a.port}"
             assert sample(gw, "asr_instance_up", instance=key) == 1
-            addresses.clear()
+            discovery.items.clear()
             await gw.refresh()
             assert sample(gw, "asr_instance_up", instance=key) is None
             gw.metrics.forget_instance(key)
