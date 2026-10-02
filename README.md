@@ -154,10 +154,10 @@ Un test optionnel utilise un vrai modèle Vosk (`VOSK_TEST_MODEL_DIR`, voir `vos
 Raccourcis (`make help`) : `make install-hooks` (hooks git), `make check` (tous les hooks sur tous les
 fichiers), `make lint`, `make test`, `make gitleaks` (recherche de secrets dans tout l'historique).
 
-**Page de statut** : `http://localhost:8000/status/` affiche l'état des workers ASR (disponibilité, latence, flux en
+**Page de statut** (service `frontend`, nginx) : `http://localhost:3000` affiche l'état des workers ASR (disponibilité, latence, flux en
 cours) sur la dernière heure, 24 heures ou 7 jours, avec le détail par instance. Les données viennent de
 `GET /api/v1/asr/instances` (temps réel) et `GET /api/v1/asr/history` (historique). Voir
-[backend/README.md](backend/README.md).
+[frontend/README.md](frontend/README.md).
 
 Les variables d'environnement sont décrites dans [docs/environment.md](docs/environment.md).
 
@@ -173,7 +173,7 @@ Le dépôt `github-workflow` doit être public, ou autoriser ce dépôt (Setting
 | `unit-tests.yml` | appelé par `ci.yml` | pytest sur `backend/` et `vosk_service/` |
 | `cd.yml` | push sur `main` | release-please, puis build et publication des images sur GHCR et scan Trivy des images publiées (rapport seul) quand une release est créée |
 
-**Chart Helm** : `helm/` (backend + vosk), généré avec
+**Chart Helm** : `helm/` (backend, vosk et frontend), généré avec
 [helm-template.sh](https://github.com/this-is-tobi/tools/blob/main/shell/helm-template.sh) de this-is-tobi.
 Le secret `nemotron-database` (clé `url`, URL SQLAlchemy asyncpg) est à créer avant l'installation :
 `helm install nemotron ./helm`. Le README du chart se régénère avec `helm-docs -c helm`.
@@ -194,6 +194,7 @@ La fusionner crée le tag et la release GitHub, met à jour `CHANGELOG.md` et la
 ```
 ghcr.io/mitchou10/nemotron-at-scale-backend:<version>        (+ :latest)
 ghcr.io/mitchou10/nemotron-at-scale-vosk-service:<version>   (+ :latest)
+ghcr.io/mitchou10/nemotron-at-scale-frontend:<version>       (+ :latest)
 ```
 
 Configuration : `.github/releases/` (versions de départ dans les manifestes, sections du changelog).
