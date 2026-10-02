@@ -3228,7 +3228,8 @@ tts:
   # -- Map of environment variables to inject into a configmap loaded by the app container (`valueFrom` not supported).
   # @section -- Tts
   envCm:
-    # Piper voices, comma-separated; the first is the default. Downloaded on first start.
+    # Piper voices, comma-separated; the first is the default. The image ships fr_FR-siwis-medium (build
+  # argument TTS_VOICES): no download at start. Others need a writable volume on /voices (`volumes`).
     TTS_VOICES: "fr_FR-siwis-medium"
   # D: "D"
   # -- Map of environment variables to inject into a secret loaded by the app container (`valueFrom`
@@ -3418,9 +3419,6 @@ tts:
   volumes:
     - name: "tmp"
       emptyDir: {}
-    # Voices downloaded on first start; use a PVC through `volumes` to keep them across restarts.
-    - name: "voices"
-      emptyDir: {}
   # - name: config-volume
   #   configMap:
   #     name: log-config
@@ -3465,8 +3463,6 @@ tts:
   volumeMounts:
     - name: "tmp"
       mountPath: "/tmp"
-    - name: "voices"
-      mountPath: "/voices"
   # - name: config-volume
   #   mountPath: /app/config
   #   subPath: config
