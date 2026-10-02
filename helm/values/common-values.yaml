@@ -62,14 +62,10 @@ backend:
     APP_ENV: "production"
     APP_DEBUG: "false"
     APP_LOG_LEVEL: "info"
-    # Live transcription goes through the Vosk service of this release (see `vosk` below).
+    # Live transcription: the Vosk and TTS workers of this release register themselves in the backend
+    # (REGISTRY_URL is set by the chart); the token is the Secret `nemotron-registry` below.
     ASR_ENABLED: "true"
-    ASR_DISCOVERY: "dns"
     ASR_STATE_STORE: "database"
-    ASR_URL: "ws://nemotron-vosk/v1/audio/transcriptions/realtime#12"
-    # Text to speech goes through the tts service of this release.
-    TTS_ENABLED: "true"
-    TTS_URL: "http://nemotron-tts"
   resources:
     requests:
       cpu: "100m"
@@ -112,6 +108,15 @@ frontend:
   image:
     pullPolicy: "IfNotPresent"
 extraObjects:
+  # Token the workers register with (backend REGISTRY_TOKEN, VOSK_/TTS_REGISTRY_TOKEN). Throwaway.
+  nemotron-registry: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: nemotron-registry
+    type: Opaque
+    stringData:
+      token: "local-test-token"
   # ---- PostgreSQL, FOR TESTS ONLY ----
   nemotron-database: |
     apiVersion: v1

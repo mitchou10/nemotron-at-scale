@@ -483,6 +483,14 @@ backend:
         secretKeyRef:
           name: "nemotron-database"
           key: "url"
+    # Token the workers (vosk, tts) register with. Secret `nemotron-registry`, key `token`: without
+    # it the registry is open (fine for a throwaway test, not beyond).
+    REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: true
   # A: "A"
   # B:
   #   valueFrom:
@@ -513,13 +521,7 @@ backend:
     APP_ENV: "production"
     APP_LOG_LEVEL: "info"
     ASR_ENABLED: "true"
-    ASR_DISCOVERY: "dns"
     ASR_STATE_STORE: "database"
-    # Instances in fill order; "#N" is the per-instance stream limit. Templated (tpl).
-    ASR_URL: 'ws://{{ include "helper.componentFullname" (dict "root" . "componentName" "vosk") }}/v1/audio/transcriptions/realtime#12'
-    # Text to speech: the tts service of this release (OpenAI-compatible relay on /api/v1/audio/speech).
-    TTS_ENABLED: "true"
-    TTS_URL: 'http://{{ include "helper.componentFullname" (dict "root" . "componentName" "tts") }}'
   # D: "D"
   # -- Map of environment variables to inject into a secret loaded by the app container (`valueFrom`
   # not supported). Values placed here are stored in plain text in the values file AND in the Helm
@@ -1516,7 +1518,13 @@ vosk:
   #     name: my-secret
   # -- Map or array of environment variables to inject into the app container (`valueFrom` supported).
   # @section -- Vosk
-  env: {}
+  env:
+    VOSK_REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: true
   # A: "A"
   # B:
   #   valueFrom:
@@ -1548,6 +1556,10 @@ vosk:
     # Stream limit = CPU limit x VOSK_STREAMS_PER_CPU (measured capacity: ~4 per CPU)
     VOSK_STREAMS_PER_CPU: "3"
     VOSK_ENDPOINTING: "false"
+    # The worker registers itself in the backend (and unregisters when it stops). Fill order: nemo
+    # instances first, then this one.
+    VOSK_REGISTRY_URL: 'http://{{ include "helper.componentFullname" (dict "root" . "componentName" "backend") }}'
+    VOSK_REGISTRY_PRIORITY: "2"
   # D: "D"
   # -- Map of environment variables to inject into a secret loaded by the app container (`valueFrom`
   # not supported). Values placed here are stored in plain text in the values file AND in the Helm
@@ -3204,7 +3216,13 @@ tts:
   #     name: my-secret
   # -- Map or array of environment variables to inject into the app container (`valueFrom` supported).
   # @section -- Tts
-  env: {}
+  env:
+    TTS_REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: true
   # A: "A"
   # B:
   #   valueFrom:
@@ -3235,6 +3253,8 @@ tts:
     # Piper voices, comma-separated; the first is the default. The image ships fr_FR-siwis-medium (build
   # argument TTS_VOICES): no download at start. Others need a writable volume on /voices (`volumes`).
     TTS_VOICES: "fr_FR-siwis-medium"
+    # The worker registers itself in the backend (and unregisters when it stops).
+    TTS_REGISTRY_URL: 'http://{{ include "helper.componentFullname" (dict "root" . "componentName" "backend") }}'
   # D: "D"
   # -- Map of environment variables to inject into a secret loaded by the app container (`valueFrom`
   # not supported). Values placed here are stored in plain text in the values file AND in the Helm

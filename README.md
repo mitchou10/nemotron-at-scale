@@ -102,10 +102,13 @@ pleines (réessayer plus tard).
 
 ## Comment la gateway répartit la charge
 
-- **Remplissage** : un nouveau flux va à la première instance saine qui n'a pas atteint sa limite,
-  dans l'ordre de `ASR_URL` ; la suivante n'est utilisée qu'une fois la précédente pleine. La limite se
-  règle par instance dans l'URL (`ws://asr-vosk:8080/...#6`) ou par défaut avec
-  `ASR_MAX_STREAMS_PER_INSTANCE`.
+- **Enregistrement** : les instances (Vosk, Nemo, TTS) **s'enregistrent elles-mêmes** auprès du backend
+  (`PUT /api/v1/registry/instances/<id>`), envoient un heartbeat toutes les 10 s et se désenregistrent à
+  l'arrêt ; une instance morte est retirée après 30 s (`REGISTRY_TTL_S`). Il n'y a plus de liste d'URL ni de
+  découverte DNS. Chaque instance annonce son adresse, sa limite de flux et sa priorité.
+- **Remplissage** : un nouveau flux va à la première instance saine qui n'a pas atteint sa limite, dans
+  l'ordre de leur priorité annoncée (Nemo GPU, puis CPU, puis Vosk) ; la suivante n'est utilisée qu'une fois la
+  précédente pleine.
 - **Panne en cours de flux** : l'audio du segment en cours est gardé en mémoire (30 s par flux par
   défaut, `ASR_BUFFER_SECONDS`). Si l'instance tombe, la gateway rejoue ce tampon sur une autre
   instance et la transcription continue.
@@ -114,7 +117,7 @@ pleines (réessayer plus tard).
 - **Métriques par instance** : latence des sondes, flux actifs, ouvertures, reprises, mémoire des
   tampons, etc. (voir [backend/README.md](backend/README.md)).
 
-Tout est configurable dans `.env` (`ASR_URL`, `ASR_DISCOVERY`, `ASR_STATE_STORE`, `ASR_MAX_*`...).
+Tout est configurable dans `.env` (`REGISTRY_*`, `ASR_STATE_STORE`, `ASR_MAX_*`...).
 
 ## Choisir un moteur ASR
 
@@ -161,7 +164,7 @@ cours) sur la dernière heure, 24 heures ou 7 jours, avec le détail par instanc
 
 **Synthèse vocale (TTS)** : `tts_service` (Piper, CPU) expose une API **compatible OpenAI**
 `POST /v1/audio/speech` (formats `mp3`, `wav`, `flac`, `pcm`, voix OpenAI ou Piper). Avec
-`docker compose --profile tts up` et `TTS_ENABLED=true`, le backend la relaie sur `/api/v1/audio/speech` : un
+`docker compose --profile tts up`, l'instance s'enregistre et le backend (gateway TTS) la relaie sur `/api/v1/audio/speech`, vers l'instance la moins chargée : un
 client OpenAI n'a qu'à pointer `base_url` vers `http://localhost:8000/api/v1` (ou `http://localhost:8081/v1` pour
 le service seul). Voir [tts_service/README.md](tts_service/README.md).
 

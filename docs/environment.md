@@ -44,11 +44,8 @@ et leur charge, et route chaque flux vers la meilleure.
 | Variable | Défaut | Description |
 |---|---|---|
 | `ASR_ENABLED` | `false` (code) / `true` (compose) | Active la transcription. Le compose force `true` sauf si `.env` dit autre chose. |
-| `ASR_URL` | gpu, cpu, vosk | URLs WebSocket séparées par des virgules, **dans l'ordre de remplissage** : une instance est remplie avant de passer à la suivante. `#N` en fin d'URL fixe sa limite de flux (`ws://asr-vosk:8080/v1/audio/transcriptions/realtime#12`). |
 | `ASR_API_KEY` | vide | Clé envoyée aux instances ASR, si elles en exigent une. **Secret.** |
-| `ASR_DISCOVERY` | `dns` | `dns` : chaque nom d'hôte est résolu en toutes les IP des réplicas (`--scale`). `static` : les URL sont utilisées telles quelles. |
 | `ASR_STATE_STORE` | `database` | `database` : l'état des instances et des flux est dans PostgreSQL (nécessaire avec plusieurs réplicas du backend). `memory` : en mémoire du processus. |
-| `ASR_MAX_STREAMS_PER_INSTANCE` | `8` | Limite de flux pour une URL sans `#N`. |
 | `ASR_PROBE_INTERVAL_S` | `5` | Secondes entre deux mesures de latence et de charge. |
 | `ASR_MAX_LATENCY_MS` | `0` | Ignore les instances plus lentes que cette valeur, sauf si toutes les libres le sont. `0` : désactivé. |
 | `ASR_BUFFER_SECONDS` | `30` | Secondes d'audio gardées par flux, rejouées sur une autre instance en cas de coupure. |
@@ -56,17 +53,32 @@ et leur charge, et route chaque flux vers la meilleure.
 | `ASR_HISTORY_INTERVAL_S` | `30` | Une mesure par instance toutes les N secondes, pour la page de statut. `0` désactive l'historique. |
 | `ASR_HISTORY_RETENTION_HOURS` | `168` | Durée de conservation des mesures (7 jours). Les plus anciennes sont supprimées. |
 
-Un nom d'hôte qui ne se résout pas (service non démarré, profil Compose inactif) est simplement ignoré.
+Il n'y a plus de liste d'URL : les instances ASR **s'enregistrent elles-mêmes** (voir ci-dessous). L'ordre de
+remplissage est la `priority` qu'elles annoncent (plus petit d'abord, puis par adresse), la limite de flux est
+le `max_streams` annoncé.
 
-### Synthèse vocale (relais)
+### Registre des workers
 
-Le backend relaie `POST /api/v1/audio/speech` vers le service `tts_service` (compatible OpenAI).
+Les serveurs de transcription (`vosk_service`, `nemo-speech`) et de synthèse vocale (`tts_service`) appellent
+`PUT /api/v1/registry/instances/<id>` quand ils sont prêts, puis toutes les 10 s (heartbeat). Une instance qui
+s'arrête proprement se désenregistre aussitôt (`DELETE`) ; une instance qui meurt est retirée après `REGISTRY_TTL_S`
+sans heartbeat. Le registre est dans PostgreSQL : tous les réplicas du backend voient les mêmes instances.
 
 | Variable | Défaut | Description |
 |---|---|---|
-| `TTS_ENABLED` | `false` | Active le relais. Désactivé : la route répond `503`. |
-| `TTS_URL` | `http://tts:8080` | Adresse du service `tts_service`. |
-| `TTS_API_KEY` | vide | Clé envoyée au service, si elle y est exigée. **Secret.** |
+| `REGISTRY_TOKEN` | vide | Jeton exigé (`Authorization: Bearer`) pour lire ou modifier le registre. Vide : registre ouvert, à réserver à un essai local. **Secret.** |
+| `REGISTRY_TTL_S` | `30` | Délai sans heartbeat après lequel une instance n'est plus utilisée. |
+| `REGISTRY_STORE` | `database` | `database` : PostgreSQL (plusieurs réplicas). `memory` : en mémoire du processus. |
+
+### Synthèse vocale (relais)
+
+Le backend est la gateway de la synthèse vocale : `POST /api/v1/audio/speech` est envoyé à l'instance `tts_service`
+(compatible OpenAI) la moins chargée parmi celles qui se sont enregistrées. Une instance injoignable est écartée
+10 s, une instance pleine (`429`) ou pas prête (`503`) est sautée pour cette requête.
+
+| Variable | Défaut | Description |
+|---|---|---|
+| `TTS_API_KEY` | vide | Clé envoyée aux instances `tts_service`, si elle y est exigée. **Secret.** |
 | `TTS_TIMEOUT_S` | `60` | Délai maximal d'une requête vers le service. |
 
 ## Service Vosk
@@ -92,13 +104,19 @@ conteneur, pas les cœurs de la machine).
 | `VOSK_API_KEY` | vide | Clé exigée des clients (le backend la fournit via `ASR_API_KEY`). **Secret.** |
 | `VOSK_CORS_ORIGIN` | vide | Origine CORS autorisée. |
 | `VOSK_LOG_LEVEL` | `info` | Niveau de log. |
+| `VOSK_REGISTRY_URL` | vide | Adresse du backend (`http://backend:8000`). Vide : le serveur ne s'enregistre pas. |
+| `VOSK_REGISTRY_TOKEN` | vide | Même valeur que `REGISTRY_TOKEN` du backend. **Secret.** |
+| `VOSK_REGISTRY_ID` | hostname | Identifiant unique de l'instance. |
+| `VOSK_REGISTRY_PRIORITY` | `0` | Ordre de remplissage annoncé (0 à 1000, plus petit d'abord). |
+| `VOSK_REGISTRY_INTERVAL_S` | `10` | Secondes entre deux heartbeats (inférieur au TTL du backend). |
+| `VOSK_SELF_URL` | IP du conteneur | Adresse annoncée au backend (`http://asr-vosk:8080`). Par défaut `http://<IP du conteneur>:<port>`. |
 
 Une variable vide est ignorée (`VOSK_MAX_STREAMS=` revient au calcul automatique).
 
 ## Service TTS (Piper)
 
 Préfixe `TTS_`, lu par `tts_service` ([tts_service/README.md](../tts_service/README.md)). `TTS_API_KEY` doit être la
-même des deux côtés (backend et service).
+même des deux côtés (backend et service) ; `TTS_REGISTRY_TOKEN` doit valoir `REGISTRY_TOKEN` du backend.
 
 | Variable | Défaut | Description |
 |---|---|---|
@@ -112,6 +130,12 @@ même des deux côtés (backend et service).
 | `TTS_API_KEY` | vide | Clé exigée des clients. **Secret.** |
 | `TTS_CORS_ORIGIN` | vide | Origine CORS autorisée. |
 | `TTS_LOG_LEVEL` | `info` | Niveau de log. |
+| `TTS_REGISTRY_URL` | vide | Adresse du backend (`http://backend:8000`). Vide : le serveur ne s'enregistre pas. |
+| `TTS_REGISTRY_TOKEN` | vide | Même valeur que `REGISTRY_TOKEN` du backend. **Secret.** |
+| `TTS_REGISTRY_ID` | hostname | Identifiant unique de l'instance. |
+| `TTS_REGISTRY_PRIORITY` | `0` | Départage à charge égale (plus petit d'abord). |
+| `TTS_REGISTRY_INTERVAL_S` | `10` | Secondes entre deux heartbeats (inférieur au TTL du backend). |
+| `TTS_SELF_URL` | IP du conteneur | Adresse annoncée au backend (`http://tts:8080`). Par défaut `http://<IP du conteneur>:<port>`. |
 
 ## Docker Compose uniquement
 
@@ -123,6 +147,7 @@ Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
 | `BACKEND_PORT` | `8000` | Port du backend publié sur l'hôte. |
 | `FRONTEND_PORT` | `3000` | Port de la page de statut publié sur l'hôte. |
 | `PROMETHEUS_PORT` | `9090` | Port de Prometheus (profil `monitoring`). |
+| `REGISTRY_TOKEN` | `change-me` | Jeton d'enregistrement, lu par le backend et passé aux workers et aux registrars Nemo. |
 | `TTS_PORT` | `8081` | Port du service TTS publié sur l'hôte (profil `tts`). |
 | `ASR_MODEL_FILE` | `nemotron-speech-streaming-en-0.6b.q8_0.gguf` | Fichier du modèle NeMo. |
 | `ASR_MODEL_URL` | Hugging Face (révision figée) | D'où `asr-model` télécharge le modèle NeMo. |
@@ -143,10 +168,11 @@ Le chart ([helm/values.yaml](../helm/values.yaml)) fournit les variables ainsi :
 
 | Section | Contenu |
 |---|---|
-| `backend.envCm` | Configuration non secrète du backend (`APP_*`, `ASR_*`). Les valeurs sont passées à `tpl` : `ASR_URL` pointe vers le service Vosk du release. |
+| `backend.envCm` | Configuration non secrète du backend (`APP_*`, `ASR_*`). |
+| `backend.env.REGISTRY_TOKEN` | Lu dans le secret `nemotron-registry` (clé `token`, facultatif). Le même secret donne `VOSK_REGISTRY_TOKEN` et `TTS_REGISTRY_TOKEN`. |
 | `backend.env.DATABASE_URL` | Lue depuis le secret Kubernetes `nemotron-database`, clé `url`, **à créer avant l'installation**. |
-| `vosk.envCm` | Configuration de Vosk (`VOSK_*`). |
-| `tts.envCm` | `TTS_VOICES`. Le backend reçoit `TTS_ENABLED` et `TTS_URL` vers le Service `tts` du release. |
+| `vosk.envCm` | Configuration de Vosk (`VOSK_*`), dont `VOSK_REGISTRY_URL` (calculé vers le Service backend du release). |
+| `tts.envCm` | `TTS_VOICES` et `TTS_REGISTRY_URL` (calculé vers le Service backend du release). |
 | `frontend.envCm` | `BACKEND_URL`, calculé vers le Service backend du release. |
 | `vosk.resources` | Limites CPU et mémoire ; la limite de flux en dérive. |
 

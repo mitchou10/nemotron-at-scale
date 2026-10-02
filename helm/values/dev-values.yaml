@@ -58,6 +58,21 @@ extraObjects:
   nemotron-db-service: null
   nemotron-db: null
 
+  # Token the workers register with: Vault KV secret with a `token` key.
+  nemotron-registry:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: nemotron-registry
+    spec:
+      vaultAuthRef: vault-auth
+      mount: exploration
+      path: dev/nemotron/registry
+      type: kv-v2
+      destination:
+        name: nemotron-registry
+        create: true
+
   # Credentials, one Vault KV secret each (mount "exploration", path dev/nemotron/<name>).
   # CNPG wants kubernetes.io/basic-auth secrets (username + password keys): an Opaque one makes the
   # Cluster wait forever.
