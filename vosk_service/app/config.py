@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     # default like nemo-speech: finals then come only from `input_audio_buffer.commit`.
     endpointing: bool = False
 
+    # Registration in the backend (see app/registration.py). Without `registry_url` the server does
+    # not register: whoever calls it must know its address.
+    registry_url: str | None = None  # e.g. http://backend:8000
+    registry_token: str | None = None
+    registry_id: str | None = None  # unique per instance; default: the container hostname
+    registry_priority: int = Field(default=0, ge=0, le=1000)  # fill order: lower first
+    registry_interval_s: float = Field(default=10.0, gt=0)  # the backend's TTL is 30 s
+    # Address the backend must use to reach this server. Default: the container IP and `port`.
+    self_url: str | None = None  # e.g. http://asr-vosk:8080
+
     api_key: str | None = None
     cors_origin: str | None = None
     log_level: str = "info"

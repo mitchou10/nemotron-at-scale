@@ -8,6 +8,14 @@ Nemo peut donc l'utiliser sans changement (`ws://asr-vosk:8080/v1/audio/transcri
 - Le modèle est téléchargé au premier démarrage dans `VOSK_MODEL_DIR` (volume Docker `/models`).
 - Aucune dépendance vers le dossier `backend/`.
 
+## Enregistrement dans le backend
+
+Avec `VOSK_REGISTRY_URL` (et `VOSK_REGISTRY_TOKEN`), le serveur s'**enregistre** auprès du backend une fois le
+modèle chargé (`PUT /api/v1/registry/instances/<id>`), envoie un heartbeat toutes les 10 s et se désenregistre à
+l'arrêt ; mort, il est retiré après le TTL du backend (30 s). Il annonce `VOSK_SELF_URL` (par défaut l'IP du
+conteneur), sa limite de flux et `VOSK_REGISTRY_PRIORITY`. Sans `VOSK_REGISTRY_URL`, rien n'est envoyé. Voir
+[docs/environment.md](../docs/environment.md).
+
 ## Routes
 
 | Méthode | Route | Rôle |
@@ -117,7 +125,7 @@ Le minimum est donc **0,5 CPU pour 2 flux**, et environ **4 flux par CPU** à la
 `VOSK_STREAMS_PER_CPU=3` pour garder de la marge ; la mémoire vaut environ 0,15 Go + 70 Mo par flux avec
 ce modèle (un modèle plus gros ajoute sa propre taille). Refais la mesure pour ton modèle et ta
 machine. Avec le backend, la limite par instance se règle dans l'URL :
-`ASR_URL=ws://asr-vosk:8080/...#6`.
+`VOSK_MAX_STREAMS`.
 
 ## Lancer
 

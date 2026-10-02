@@ -14,6 +14,7 @@ from app import __version__
 from app.config import Settings, get_settings
 from app.engine import Engine
 from app.errors import ApiError, error_body
+from app.registration import Registration
 from app.routes import realtime, service, transcriptions
 from app.state import ServerState
 
@@ -52,7 +53,14 @@ def create_app(
                     logger.exception("could not load the model")
 
             loader = asyncio.create_task(load())
+        registration = (
+            Registration(settings, lambda: state.ready) if settings.registry_url else None
+        )
+        heartbeat = asyncio.create_task(registration.run()) if registration else None
         yield
+        if heartbeat and registration:
+            heartbeat.cancel()
+            await registration.close()
         if loader:
             loader.cancel()
         state.executor.shutdown(wait=False, cancel_futures=True)
