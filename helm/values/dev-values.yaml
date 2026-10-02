@@ -1,0 +1,27 @@
+# Environment "dev" on the DSO cluster. Applied on top of common-values.yaml:
+#
+#   helm upgrade --install nemotron ./helm \
+#     -f helm/values/common-values.yaml -f helm/values/dev-values.yaml -n nemotron --create-namespace
+#
+# Same shape as the Muffin ingress: one host, /api/ to the backend and everything else to the front.
+# The Service ports of this chart are 80 (they forward to the container ports 8000 and 8080).
+global:
+  env:
+    ENVIRONMENT: "dev"
+  ingress:
+    # No className: the cluster default applies (set it, or add the annotations of the cluster,
+    # such as the allowed source ranges, here if needed).
+    className: ""
+    hosts:
+      - name: "nemotron-dev.example.com"
+        paths:
+          - pathType: "Prefix"
+            path: "/api/"
+            backend:
+              serviceName: "nemotron-backend"
+              portNumber: 80
+          - pathType: "Prefix"
+            path: "/"
+            backend:
+              serviceName: "nemotron-frontend"
+              portNumber: 80

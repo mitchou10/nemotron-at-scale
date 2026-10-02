@@ -4,6 +4,7 @@
 #   kubectl -n nemotron rollout status deploy/nemotron-backend
 #   kubectl -n nemotron port-forward svc/nemotron-frontend 3000:80    # status page: http://localhost:3000
 #   kubectl -n nemotron port-forward svc/nemotron-tts 8081:80         # TTS: http://localhost:8081
+#   or through the ingress below: http://nemotron.local (status page) and http://nemotron.local/api/ (API)
 #
 # It is self-contained: PostgreSQL and its credentials are created by `extraObjects` below, so no
 # Secret has to exist beforehand. THE DATABASE IS FOR TESTS ONLY (throwaway password, data lost with
@@ -21,8 +22,26 @@ fullnameOverride: nemotron
 global:
   # imagePullSecrets:
   #   - name: ghcr-pull
+  # One host for the whole release (needs an ingress controller; without one the resource is inert).
+  # /api/ goes to the backend (including the OpenAI-compatible POST /api/v1/audio/speech) and
+  # everything else to the status page. Add `127.0.0.1 nemotron.local` to /etc/hosts (or the
+  # address of your ingress controller), then open http://nemotron.local
   ingress:
-    enabled: false
+    enabled: true
+    className: "nginx"
+    hosts:
+      - name: "nemotron.local"
+        paths:
+          - pathType: "Prefix"
+            path: "/api/"
+            backend:
+              serviceName: "nemotron-backend"
+              portNumber: 80
+          - pathType: "Prefix"
+            path: "/"
+            backend:
+              serviceName: "nemotron-frontend"
+              portNumber: 80
 
 backend:
   replicaCount: 1
@@ -92,16 +111,6 @@ tts:
 frontend:
   image:
     pullPolicy: "IfNotPresent"
-  # Uncomment to reach the status page by name (needs an ingress controller):
-  # ingress:
-  #   enabled: true
-  #   className: "nginx"
-  #   hosts:
-  #     - name: "nemotron.local"
-  #       paths:
-  #         - path: "/"
-  #           pathType: "Prefix"
-
 extraObjects:
   # ---- PostgreSQL, FOR TESTS ONLY ----
   nemotron-database: |
