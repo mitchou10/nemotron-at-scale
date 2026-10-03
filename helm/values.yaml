@@ -491,6 +491,14 @@ backend:
           name: "nemotron-registry"
           key: "token"
           optional: true
+    # Token of the admin interface (/api/v1/admin/*). Secret `nemotron-admin`, key `token`: without
+    # it the statistics are open (fine for a throwaway test, not beyond).
+    ADMIN_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-admin"
+          key: "token"
+          optional: true
   # A: "A"
   # B:
   #   valueFrom:

@@ -50,12 +50,20 @@ et leur charge, et route chaque flux vers la meilleure.
 | `ASR_MAX_LATENCY_MS` | `0` | Ignore les instances plus lentes que cette valeur, sauf si toutes les libres le sont. `0` : désactivé. |
 | `ASR_BUFFER_SECONDS` | `30` | Secondes d'audio gardées par flux, rejouées sur une autre instance en cas de coupure. |
 | `ASR_MAX_FAILOVERS` | `2` | Nombre de reprises autorisées par flux. `0` désactive la reprise. |
-| `ASR_HISTORY_INTERVAL_S` | `30` | Une mesure par instance toutes les N secondes, pour la page de statut. `0` désactive l'historique. |
+| `ASR_HISTORY_INTERVAL_S` | `30` | Une mesure par instance toutes les N secondes, pour l'historique des workers. `0` désactive l'historique. |
 | `ASR_HISTORY_RETENTION_HOURS` | `168` | Durée de conservation des mesures (7 jours). Les plus anciennes sont supprimées. |
 
 Il n'y a plus de liste d'URL : les instances ASR **s'enregistrent elles-mêmes** (voir ci-dessous). L'ordre de
 remplissage est la `priority` qu'elles annoncent (plus petit d'abord, puis par adresse), la limite de flux est
 le `max_streams` annoncé.
+
+### Interface d'administration
+
+| Variable | Défaut | Description |
+|---|---|---|
+| `ADMIN_TOKEN` | vide | Jeton exigé (`Authorization: Bearer`) pour `/api/v1/admin/*`, demandé par l'interface à la connexion. Vide : statistiques ouvertes, à réserver à un essai local. **Secret.** |
+| `STATS_RETENTION_DAYS` | `30` | Les flux audio et les requêtes TTS plus anciens sont supprimés. |
+| `STATS_STORE` | `database` | `database` : PostgreSQL. `memory` : en mémoire du processus (perdu au redémarrage). |
 
 ### Registre des workers
 
@@ -145,8 +153,9 @@ Ces variables ne sont lues que par [docker-compose.yml](../docker-compose.yml).
 |---|---|---|
 | `DB_PORT` | `5432` | Port PostgreSQL publié sur l'hôte. |
 | `BACKEND_PORT` | `8000` | Port du backend publié sur l'hôte. |
-| `FRONTEND_PORT` | `3000` | Port de la page de statut publié sur l'hôte. |
+| `FRONTEND_PORT` | `3000` | Port de l'interface d'administration publié sur l'hôte. |
 | `PROMETHEUS_PORT` | `9090` | Port de Prometheus (profil `monitoring`). |
+| `ADMIN_TOKEN` | `change-me` | Jeton de l'interface d'administration, lu par le backend. |
 | `REGISTRY_TOKEN` | `change-me` | Jeton d'enregistrement, lu par le backend et passé aux workers et aux registrars Nemo. |
 | `TTS_PORT` | `8081` | Port du service TTS publié sur l'hôte (profil `tts`). |
 | `ASR_MODEL_FILE` | `nemotron-speech-streaming-en-0.6b.q8_0.gguf` | Fichier du modèle NeMo. |
@@ -169,6 +178,7 @@ Le chart ([helm/values.yaml](../helm/values.yaml)) fournit les variables ainsi :
 | Section | Contenu |
 |---|---|
 | `backend.envCm` | Configuration non secrète du backend (`APP_*`, `ASR_*`). |
+| `backend.env.ADMIN_TOKEN` | Lu dans le secret `nemotron-admin` (clé `token`, facultatif). |
 | `backend.env.REGISTRY_TOKEN` | Lu dans le secret `nemotron-registry` (clé `token`, facultatif). Le même secret donne `VOSK_REGISTRY_TOKEN` et `TTS_REGISTRY_TOKEN`. |
 | `backend.env.DATABASE_URL` | Lue depuis le secret Kubernetes `nemotron-database`, clé `url`, **à créer avant l'installation**. |
 | `vosk.envCm` | Configuration de Vosk (`VOSK_*`), dont `VOSK_REGISTRY_URL` (calculé vers le Service backend du release). |

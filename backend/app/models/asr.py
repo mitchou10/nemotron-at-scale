@@ -58,3 +58,20 @@ class RegisteredWorker(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class TtsCall(Base):
+    """One text-to-speech request that went through the gateway (for the admin statistics)."""
+
+    __tablename__ = "tts_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status_code: Mapped[int] = mapped_column(Integer)
+    instance: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    voice: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    response_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    characters: Mapped[int] = mapped_column(Integer, default=0)
+    audio_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    first_byte_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)

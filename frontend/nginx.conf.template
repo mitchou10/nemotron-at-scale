@@ -7,10 +7,17 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # The page and its assets: short cache, so a new release shows up quickly.
+    # The single-page application: any path that is not a file is handled by the router.
+    # index.html is never cached, so a new release shows up at once.
     location / {
-        try_files $uri $uri/ =404;
+        try_files $uri /index.html;
         add_header Cache-Control "no-cache";
+    }
+
+    # Built files carry a hash in their name: they never change.
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
     # Same-origin API: the browser never talks to the backend directly (no CORS).

@@ -1,5 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
+# ---- Build stage: the admin interface (React, Tailwind, shadcn/ui) ----
+FROM node:22-alpine AS build
+
+WORKDIR /app
+RUN corepack enable
+
+# Dependencies first (cached layer)
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm build
+
 # ---- Runtime stage ----
 # Unprivileged nginx (uid 101, port 8080): runs with a read-only root filesystem and no capabilities.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
@@ -11,7 +24,7 @@ ENV BACKEND_URL=http://backend:8000 \
 
 # The entrypoint renders every file of /etc/nginx/templates into /etc/nginx/conf.d
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-COPY index.html style.css app.js /usr/share/nginx/html/
+COPY --from=build /app/dist /usr/share/nginx/html
 
 # Explicit for scanners: the base image already runs as this user
 USER 101
