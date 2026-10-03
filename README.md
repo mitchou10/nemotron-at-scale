@@ -157,16 +157,39 @@ Un test optionnel utilise un vrai modèle Vosk (`VOSK_TEST_MODEL_DIR`, voir `vos
 Raccourcis (`make help`) : `make install-hooks` (hooks git), `make check` (tous les hooks sur tous les
 fichiers), `make lint`, `make test`, `make gitleaks` (recherche de secrets dans tout l'historique).
 
-**Page de statut** (service `frontend`, nginx) : `http://localhost:3000` affiche l'état des workers ASR (disponibilité, latence, flux en
-cours) sur la dernière heure, 24 heures ou 7 jours, avec le détail par instance. Les données viennent de
-`GET /api/v1/asr/instances` (temps réel) et `GET /api/v1/asr/history` (historique). Voir
-[frontend/README.md](frontend/README.md).
-
 **Synthèse vocale (TTS)** : `tts_service` (Piper, CPU) expose une API **compatible OpenAI**
 `POST /v1/audio/speech` (formats `mp3`, `wav`, `flac`, `pcm`, voix OpenAI ou Piper). Avec
 `docker compose --profile tts up`, l'instance s'enregistre et le backend (gateway TTS) la relaie sur `/api/v1/audio/speech`, vers l'instance la moins chargée : un
 client OpenAI n'a qu'à pointer `base_url` vers `http://localhost:8000/api/v1` (ou `http://localhost:8081/v1` pour
 le service seul). Voir [tts_service/README.md](tts_service/README.md).
+
+## Interface d'administration
+
+Le service `frontend` (React, Tailwind CSS, shadcn/ui, servi par nginx) est l'interface d'un administrateur :
+`http://localhost:3000` avec Compose. Elle s'appuie sur `GET /api/v1/admin/*` du backend (protégé par `ADMIN_TOKEN`,
+demandé à la connexion) et se rafraîchit toutes les 10 s.
+
+![Vue d'ensemble](docs/screenshots/overview.png)
+
+- **Vue d'ensemble** : état des workers, requêtes TTS (taux de réussite, durée p95, caractères synthétisés), flux STT
+  (en cours, reprises, échecs, temps d'audio), appels dans le temps, durée des synthèses, voix / formats / workers les
+  plus sollicités. Période au choix : 1 h, 6 h, 24 h, 7 j, 30 j.
+- **Workers** : tous les workers enregistrés, avec état, charge, latence et dernier signe de vie.
+- **Transcription** et **Synthèse vocale** : les flux et les requêtes récents, filtrables.
+- Thème clair ou sombre, utilisable sur mobile.
+
+| Workers | Synthèse vocale |
+|---|---|
+| ![Workers](docs/screenshots/workers.png) | ![Synthèse vocale](docs/screenshots/tts.png) |
+
+| Transcription | Thème sombre |
+|---|---|
+| ![Transcription](docs/screenshots/stt.png) | ![Thème sombre](docs/screenshots/overview-dark.png) |
+
+Chaque requête TTS qui passe par la gateway est enregistrée (code, worker, voix, format, caractères, durée) dans la
+table `tts_calls` ; les flux STT le sont dans `asr_streams`. Au-delà de `STATS_RETENTION_DAYS` (30 par défaut) ils
+sont supprimés. `backend/scripts/seed_demo.py` remplit une base de démonstration. Voir
+[frontend/README.md](frontend/README.md).
 
 Les variables d'environnement sont décrites dans [docs/environment.md](docs/environment.md).
 
