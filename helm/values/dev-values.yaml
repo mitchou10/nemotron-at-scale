@@ -73,6 +73,21 @@ extraObjects:
         name: nemotron-registry
         create: true
 
+  # Token of the admin interface: Vault KV secret with a `token` key.
+  nemotron-admin:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: nemotron-admin
+    spec:
+      vaultAuthRef: vault-auth
+      mount: exploration
+      path: dev/nemotron/admin
+      type: kv-v2
+      destination:
+        name: nemotron-admin
+        create: true
+
   # Credentials, one Vault KV secret each (mount "exploration", path dev/nemotron/<name>).
   # CNPG wants kubernetes.io/basic-auth secrets (username + password keys): an Opaque one makes the
   # Cluster wait forever.
