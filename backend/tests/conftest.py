@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from app.api.routes.audio import active_clients
 from app.main import app
+from app.services.calls import InMemoryTtsCallStore
 from app.services.registry import InMemoryRegistryStore
 
 
@@ -17,6 +18,8 @@ def registry() -> InMemoryRegistryStore:
     """A fresh registry for every test (the app would otherwise use the database)."""
     app.state.registry = InMemoryRegistryStore()
     app.state.tts_pool = None
+    app.state.transcriber = None
+    app.state.tts_calls = InMemoryTtsCallStore()
     return app.state.registry  # type: ignore[no-any-return]
 
 

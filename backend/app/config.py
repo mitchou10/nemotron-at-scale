@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     REGISTRY_TTL_S: float = 30.0
     REGISTRY_STORE: Literal["database", "memory"] = "database"
 
+    # Admin interface: token for /api/v1/admin/*. Without one the statistics are open: set one
+    # outside local tests.
+    ADMIN_TOKEN: str | None = None
+    # Statistics (text-to-speech calls, audio streams) older than this are deleted.
+    STATS_RETENTION_DAYS: int = 30
+    STATS_STORE: Literal["database", "memory"] = "database"
+
     # CORS
     CORS_ORIGINS: list[AnyHttpUrl] | list[str] = Field(
         default_factory=lambda: ["http://localhost:3000"]

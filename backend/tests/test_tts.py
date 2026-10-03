@@ -1,6 +1,7 @@
 """Text-to-speech gateway: routing to the registered instances."""
 
 from collections.abc import Callable
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -8,6 +9,7 @@ from httpx import AsyncClient
 
 from app.main import app
 from app.services.registry import InMemoryRegistryStore, RegisteredInstance
+from app.services.state import utcnow
 from app.services.tts_pool import TtsPool
 
 SPEECH = {"model": "tts-1", "input": "Bonjour", "voice": "alloy"}
@@ -183,3 +185,34 @@ async def test_voices_route(client: AsyncClient, registry: InMemoryRegistryStore
 @pytest.mark.parametrize("path", ["/api/v1/audio/speech"])
 async def test_get_on_speech_is_not_allowed(client: AsyncClient, path: str) -> None:
     assert (await client.get(path)).status_code == 405
+
+
+async def test_calls_are_logged_for_the_statistics(
+    client: AsyncClient, registry: InMemoryRegistryStore
+) -> None:
+    await make_pool(registry, audio, "tts-a")
+    await client.post("/api/v1/audio/speech", json={**SPEECH, "response_format": "wav"})
+
+    [logged] = await app.state.tts_calls.list_since(utcnow() - timedelta(minutes=1))
+    assert (logged.status_code, logged.instance, logged.voice) == (200, "tts-a", "fr_FR-x")
+    assert (logged.characters, logged.response_format) == (len("Bonjour"), "wav")
+    assert logged.audio_bytes == len(b"audio from tts-a")
+    assert logged.first_byte_ms is not None
+
+
+async def test_failed_calls_are_logged_too(
+    client: AsyncClient, registry: InMemoryRegistryStore
+) -> None:
+    await make_pool(registry, audio)  # nothing registered
+    await client.post("/api/v1/audio/speech", json=SPEECH)
+    [logged] = await app.state.tts_calls.list_since(utcnow() - timedelta(minutes=1))
+    assert (logged.status_code, logged.instance) == (503, None)
+    assert logged.characters == len("Bonjour")
+
+
+async def test_voices_requests_are_not_logged(
+    client: AsyncClient, registry: InMemoryRegistryStore
+) -> None:
+    await make_pool(registry, lambda request: httpx.Response(200, json={"data": []}), "tts-a")
+    await client.get("/api/v1/audio/voices")
+    assert await app.state.tts_calls.list_since(utcnow() - timedelta(minutes=1)) == []

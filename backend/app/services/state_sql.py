@@ -92,6 +92,12 @@ class SqlStateStore(StateStore):
             await session.commit()
         return int(result.rowcount)  # type: ignore[attr-defined]
 
+    async def prune_streams(self, before: datetime) -> int:
+        async with self._session_factory() as session:
+            result = await session.execute(delete(AsrStream).where(AsrStream.started_at < before))
+            await session.commit()
+        return int(result.rowcount)  # type: ignore[attr-defined]
+
     async def save_sample(self, sample: InstanceSample) -> None:
         async with self._session_factory() as session:
             session.add(AsrSample(**asdict(sample)))
