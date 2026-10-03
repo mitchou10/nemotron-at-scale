@@ -27,6 +27,7 @@ class Upstream:
     headers: httpx.Headers
     chunks: AsyncIterator[bytes]
     cleanup: BackgroundTask
+    instance_id: str | None = None
 
 
 class NoInstanceError(Exception):
@@ -104,6 +105,7 @@ class TtsPool:
                 response.headers,
                 response.aiter_bytes(),
                 BackgroundTask(self._finish, response, instance.id),
+                instance.id,
             )
             if response.status_code in RETRY_STATUSES:
                 if last is not None:
