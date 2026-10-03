@@ -18,17 +18,21 @@ gitleaks: ## Scan the whole git history for secrets, like the CI does
 	docker run --rm -v "$(CURDIR):/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 \
 		git . --config .gitleaks.toml --redact --no-banner
 
-lint: ## Lint and format-check the Python projects (ruff)
+lint: ## Lint and format-check the Python projects (ruff) and the admin interface (oxlint, tsc)
 	@for p in $(PROJECTS); do \
 		echo "== $$p"; \
 		(cd $$p && uv run --extra dev ruff check . && uv run --extra dev ruff format --check .) || exit 1; \
 	done
+	@echo "== frontend"
+	@cd frontend && pnpm install --frozen-lockfile >/dev/null && pnpm lint && pnpm typecheck
 
-test: ## Run the tests of the Python projects
+test: ## Run the tests of the Python projects and of the admin interface
 	@for p in $(PROJECTS); do \
 		echo "== $$p"; \
 		(cd $$p && uv run --extra dev pytest) || exit 1; \
 	done
+	@echo "== frontend"
+	@cd frontend && pnpm install --frozen-lockfile >/dev/null && pnpm test
 
 up: ## Start the stack with the Vosk profile (see docker-compose.yml for the others)
 	docker compose --profile vosk up --build
