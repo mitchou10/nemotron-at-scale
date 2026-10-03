@@ -81,6 +81,14 @@ jobs:
     with:
       WORKING_DIRECTORY: tts_service
 
+  checks-frontend:
+    name: Frontend
+    needs: paths
+    if: ${{ contains(fromJSON(needs.paths.outputs.changed), 'frontend') }}
+    uses: ./.github/workflows/frontend-checks.yml
+    permissions:
+      contents: read
+
   # Chart lint (chart-testing + helm-docs), same shared workflow as the Muffin project.
   lint-helm:
     name: Lint Helm chart
@@ -216,6 +224,7 @@ jobs:
       - lint-vosk-service
       - lint-tts-service
       - lint-helm
+      - checks-frontend
       - unit-tests-backend
       - unit-tests-vosk-service
       - unit-tests-tts-service

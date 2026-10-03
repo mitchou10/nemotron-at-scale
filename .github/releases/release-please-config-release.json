@@ -23,6 +23,11 @@
           "type": "toml",
           "path": "tts_service/pyproject.toml",
           "jsonpath": "project.version"
+        },
+        {
+          "type": "json",
+          "path": "frontend/package.json",
+          "jsonpath": "$.version"
         }
       ],
       "changelog-sections": [
