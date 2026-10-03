@@ -117,6 +117,15 @@ extraObjects:
     type: Opaque
     stringData:
       token: "local-test-token"
+  # Token of the admin interface, asked at login. Throwaway.
+  nemotron-admin: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: nemotron-admin
+    type: Opaque
+    stringData:
+      token: "local-admin-token"
   # ---- PostgreSQL, FOR TESTS ONLY ----
   nemotron-database: |
     apiVersion: v1
