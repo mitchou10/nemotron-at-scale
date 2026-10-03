@@ -124,6 +124,7 @@ alembic downgrade -1
 | GET     | `/api/v1/health`         | Liveness probe       |
 | GET     | `/api/v1/health/ready`   | Readiness probe      |
 | GET     | `/api/v1/asr/instances`  | État des instances ASR (gateway) |
+| GET     | `/api/v1/admin/overview`, `/timeseries`, `/workers`, `/stt/streams`, `/tts/calls` | Statistiques de l'interface d'administration (jeton `ADMIN_TOKEN`) |
 | PUT     | `/api/v1/registry/instances/{id}` | Enregistrement et heartbeat d'une instance (jeton `REGISTRY_TOKEN`) |
 | DELETE  | `/api/v1/registry/instances/{id}` | Désenregistrement |
 | GET     | `/api/v1/registry/instances` | Instances enregistrées et vivantes (`?kind=tts`) |

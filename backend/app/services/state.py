@@ -88,6 +88,10 @@ class StateStore(ABC):
         """Saved streams, oldest first; `since` keeps those started at or after that time."""
 
     @abstractmethod
+    async def prune_streams(self, before: datetime) -> int:
+        """Delete the streams started before `before`; return how many."""
+
+    @abstractmethod
     async def save_sample(self, sample: InstanceSample) -> None: ...
 
     @abstractmethod
@@ -127,6 +131,12 @@ class InMemoryStateStore(StateStore):
         if since:
             streams = [s for s in streams if s.started_at >= since]
         return streams
+
+    async def prune_streams(self, before: datetime) -> int:
+        old = [k for k, s in self._streams.items() if s.started_at < before]
+        for key in old:
+            del self._streams[key]
+        return len(old)
 
     async def save_sample(self, sample: InstanceSample) -> None:
         self._samples.append(dataclasses.replace(sample))

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    admin_router,
     asr_router,
     audio_router,
     health_router,
@@ -19,22 +20,29 @@ from app.api.routes import (
 )
 from app.config import settings
 from app.db import AsyncSessionLocal
+from app.services.calls import InMemoryTtsCallStore, TtsCallStore
+from app.services.calls_sql import SqlTtsCallStore
 from app.services.discovery import RegistryDiscovery
 from app.services.gateway import Gateway
 from app.services.registry import InMemoryRegistryStore, RegistryStore
 from app.services.registry_sql import SqlRegistryStore
-from app.services.state import InMemoryStateStore, StateStore, safely
+from app.services.state import InMemoryStateStore, StateStore, safely, utcnow
 from app.services.state_sql import SqlStateStore
 from app.services.tts_pool import TtsPool
 
 PRUNE_INTERVAL_S = 60.0
 
 
-async def _prune_registry(registry: RegistryStore) -> None:
-    """Forget the instances that have been silent for much longer than the TTL."""
+async def _prune(app: FastAPI) -> None:
+    """Forget the instances silent for much longer than the TTL, and the old statistics."""
     while True:
         await asyncio.sleep(PRUNE_INTERVAL_S)
-        await safely(registry.prune(settings.REGISTRY_TTL_S * 10), "prune the registry")
+        await safely(app.state.registry.prune(settings.REGISTRY_TTL_S * 10), "prune the registry")
+        before = utcnow() - timedelta(days=settings.STATS_RETENTION_DAYS)
+        await safely(app.state.tts_calls.prune(before), "prune the text-to-speech calls")
+        gateway = app.state.transcriber
+        if gateway:
+            await safely(gateway.store.prune_streams(before), "prune the audio streams")
 
 
 @asynccontextmanager
@@ -52,7 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout_s=settings.TTS_TIMEOUT_S,
     )
     app.state.tts_pool = pool
-    pruner = asyncio.create_task(_prune_registry(registry))
+    pruner = asyncio.create_task(_prune(app))
     yield
     pruner.cancel()
     with contextlib.suppress(asyncio.CancelledError):
@@ -68,6 +76,13 @@ def build_registry() -> RegistryStore:
     if settings.REGISTRY_STORE == "database":
         return SqlRegistryStore(AsyncSessionLocal)
     return InMemoryRegistryStore()
+
+
+def build_tts_calls() -> TtsCallStore:
+    """The log of text-to-speech requests behind the admin statistics."""
+    if settings.STATS_STORE == "database":
+        return SqlTtsCallStore(AsyncSessionLocal)
+    return InMemoryTtsCallStore()
 
 
 def build_gateway(registry: RegistryStore) -> Gateway | None:
@@ -120,6 +135,7 @@ def create_app() -> FastAPI:
     )
 
     app.state.registry = build_registry()
+    app.state.tts_calls = build_tts_calls()
 
     # Routers
     api_prefix = "/api/v1"
@@ -128,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(asr_router, prefix=api_prefix)
     app.include_router(tts_router, prefix=api_prefix)
     app.include_router(registry_router, prefix=api_prefix)
+    app.include_router(admin_router, prefix=api_prefix)
     app.include_router(metrics_router)
 
     return app
