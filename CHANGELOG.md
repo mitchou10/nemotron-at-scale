@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0-rc.3](https://github.com/mitchou10/nemotron-at-scale/compare/v0.2.0-rc.2...v0.2.0-rc.3) (2026-10-11)
+
+
+### Bug Fixes
+
+* **tts:** make the voice files readable by any uid ([0930c52](https://github.com/mitchou10/nemotron-at-scale/commit/0930c5296bc63ff7010d60cab15d8614abbe9671))
+
 ## [0.2.0-rc.2](https://github.com/mitchou10/nemotron-at-scale/compare/v0.2.0-rc.1...v0.2.0-rc.2) (2026-10-11)
 
 
