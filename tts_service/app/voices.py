@@ -47,6 +47,8 @@ def ensure_voice(settings: Settings, voice: str) -> Path:
             except Exception:
                 Path(part.name).unlink(missing_ok=True)
                 raise
+        # NamedTemporaryFile is 0600: the pod may run under another uid than the image's user.
+        Path(part.name).chmod(0o644)
         Path(part.name).replace(target)
     logger.info("voice %s ready in %s", voice, root)
     return model
