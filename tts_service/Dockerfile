@@ -41,7 +41,7 @@ RUN groupadd -r appuser && useradd -r -m -g appuser appuser
 WORKDIR /app
 
 COPY --from=builder --chown=appuser:appuser /app /app
-COPY --from=voices --chown=appuser:appuser /voices /voices
+COPY --from=voices --chown=appuser:appuser --chmod=a+rX /voices /voices
 
 # The same list as the build argument: these voices are loaded at start (change both together, or
 # mount a volume on /voices to download others on first start).
