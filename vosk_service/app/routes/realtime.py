@@ -6,7 +6,7 @@ import binascii
 import json
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
 
 from app.auth import websocket_authorized
@@ -128,5 +128,9 @@ async def realtime(websocket: WebSocket) -> None:
                 events = [error_event(str(exc))]
             for item in events:
                 await websocket.send_json(item)
+    except WebSocketDisconnect:
+        # The client left between our read and our write (the backend drops a stream that is too
+        # late): nothing to answer to, and not an error worth a traceback.
+        pass
     finally:
         state.close_stream()
