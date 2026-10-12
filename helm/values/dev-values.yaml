@@ -40,17 +40,99 @@ backend:
         secretKeyRef:
           name: "nemotron-db-infos"
           key: "DATABASE_URL"
-  # CNPG creates its Service a few moments after the Cluster: wait for it.
-  initContainers:
-    - name: wait-for-db
-      image: "docker.io/library/busybox:1.37"
-      command: ["sh", "-c", "until nc -z nemotron-pg-cluster-rw 5432; do echo 'waiting for the database'; sleep 2; done"]
-      securityContext:
-        allowPrivilegeEscalation: false
-        runAsNonRoot: true
-        runAsUser: 1000
-        capabilities:
-          drop: ["ALL"]
+  # The throwaway `wait-for-db` of common-values.yaml targets `nemotron-db`, which does not exist
+  # here. The schema is created by `jobs.migration` below, and the backend retries until the CNPG
+  # Service answers.
+  initContainers: []
+
+jobs:
+  # `alembic upgrade head`: the backend image only runs uvicorn (docker-compose runs alembic itself),
+  # so on Kubernetes the schema has to be created by this job. `pre-install` would run before the
+  # CNPG cluster exists, so on install it runs after the resources are created (`post-install`);
+  # on upgrade the cluster is already there, so it runs first (`pre-upgrade`) and the new code
+  # never starts on an old schema.
+  migration:
+    hook:
+      enabled: true
+      types:
+        - "post-install"
+        - "pre-upgrade"
+      weight: 0
+      deletePolicy: "before-hook-creation,hook-succeeded"
+    image:
+      registry: "ghcr.io"
+      repository: "mitchou10/nemotron-at-scale/backend"
+      pullPolicy: "IfNotPresent"
+    command: ["alembic"]
+    args: ["upgrade", "head"]
+    envFrom:
+      - secretRef:
+          name: "nemotron-db-infos"
+    serviceAccount:
+      enabled: true
+      create: true
+    backoffLimit: 2
+    activeDeadlineSeconds: 900
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      seccompProfile:
+        type: "RuntimeDefault"
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      capabilities:
+        drop: ["ALL"]
+    initContainers:
+      - name: wait-for-postgres
+        # Same image as the migration (no dependency on docker.io). Polls the TCP port of the host
+        # alembic will really use; alembic then fails fast if PostgreSQL is not really ready.
+        image: "ghcr.io/mitchou10/nemotron-at-scale/backend:{{ .Chart.AppVersion }}"
+        imagePullPolicy: "IfNotPresent"
+        command:
+          - "python"
+          - "-c"
+          - |-
+            import os,socket,time
+            from urllib.parse import urlsplit
+            u = urlsplit(os.environ['DATABASE_URL'])
+            print(f'Waiting for PostgreSQL at {u.hostname}:{u.port or 5432}', flush=True)
+            while True:
+                try:
+                    socket.create_connection((u.hostname, u.port or 5432), 2).close()
+                    break
+                except OSError:
+                    time.sleep(1)
+            print('PostgreSQL reachable', flush=True)
+        envFrom:
+          - secretRef:
+              name: "nemotron-db-infos"
+        securityContext:
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seccompProfile:
+            type: "RuntimeDefault"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
 
 extraObjects:
   # The throwaway PostgreSQL of common-values.yaml is replaced by the CNPG cluster below.

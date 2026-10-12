@@ -47,7 +47,9 @@ backend:
   replicaCount: 1
   image:
     pullPolicy: "IfNotPresent"
-  # Wait for PostgreSQL: the container runs the migrations as soon as it starts.
+  # Wait for PostgreSQL. The image does not migrate: docker-compose runs `alembic upgrade head`
+  # itself, and the dev environment does it with `jobs.migration`. Here the schema is NOT created
+  # (run `kubectl exec deploy/nemotron-backend -- alembic upgrade head` once).
   initContainers:
     - name: wait-for-db
       image: "docker.io/library/busybox:1.37"
