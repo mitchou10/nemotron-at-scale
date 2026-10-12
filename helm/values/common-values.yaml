@@ -1,71 +1,43 @@
-# Values to try the chart as is, on a local cluster (kind, minikube, k3d, Docker Desktop):
+# Base for the DSO cluster (ArgoCD, Vault Secrets Operator, CloudNativePG), shared by every
+# environment. An environment file (dev-values.yaml...) only sets what changes: host, Vault mount
+# and path of each secret, size of the database. Order matters, the environment file comes last:
 #
-#   helm upgrade --install nemotron ./helm -f helm/values/common-values.yaml -n nemotron --create-namespace
-#   kubectl -n nemotron rollout status deploy/nemotron-backend
-#   kubectl -n nemotron port-forward svc/nemotron-frontend 3000:80    # status page: http://localhost:3000
-#   kubectl -n nemotron port-forward svc/nemotron-tts 8081:80         # TTS: http://localhost:8081
-#   or through the ingress below: http://nemotron.local (status page) and http://nemotron.local/api/ (API)
+#   helm upgrade --install nemotron ./helm \
+#     -f helm/values/common-values.yaml -f helm/values/dev-values.yaml -n <namespace>
 #
-# It is self-contained: PostgreSQL and its credentials are created by `extraObjects` below, so no
-# Secret has to exist beforehand. THE DATABASE IS FOR TESTS ONLY (throwaway password, data lost with
-# the pod): in a real environment, remove `nemotron-db` and `nemotron-database` from `extraObjects`,
-# create the `nemotron-database` Secret yourself (key `url`) and point it to a managed PostgreSQL.
-#
-# Images are pulled from ghcr.io. They are private until the package is made public (GitHub >
-# Packages > the image > Package settings): then create a pull secret and uncomment `imagePullSecrets`
-#   kubectl -n nemotron create secret docker-registry ghcr-pull \
-#     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token with read:packages>
-
-# Predictable names: Services are nemotron-backend, nemotron-frontend, nemotron-tts, nemotron-vosk.
+# With ArgoCD, list common-values.yaml in `valueFiles` and put the content of the environment file
+# in `values`. To try the chart on a local cluster instead, use local-values.yaml.
 fullnameOverride: nemotron
 
 global:
-  # imagePullSecrets:
-  #   - name: ghcr-pull
-  # One host for the whole release (needs an ingress controller; without one the resource is inert).
-  # /api/ goes to the backend (including the OpenAI-compatible POST /api/v1/audio/speech) and
-  # everything else to the status page. Add `127.0.0.1 nemotron.local` to /etc/hosts (or the
-  # address of your ingress controller), then open http://nemotron.local
+  imagePullSecrets:
+    - name: "registry-pull-secret"
+  # One host for the whole release, set by the environment file. /api/ goes to the backend and
+  # everything else to the status page.
   ingress:
     enabled: true
-    className: "nginx"
-    hosts:
-      - name: "nemotron.local"
-        paths:
-          - pathType: "Prefix"
-            path: "/api/"
-            backend:
-              serviceName: "nemotron-backend"
-              portNumber: 80
-          - pathType: "Prefix"
-            path: "/"
-            backend:
-              serviceName: "nemotron-frontend"
-              portNumber: 80
 
 backend:
-  replicaCount: 1
   image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "exploration/nemotron-at-scale/backend"
     pullPolicy: "IfNotPresent"
-  # Wait for PostgreSQL. The image does not migrate: docker-compose runs `alembic upgrade head`
-  # itself, and the dev environment does it with `jobs.migration`. Here the schema is NOT created
-  # (run `kubectl exec deploy/nemotron-backend -- alembic upgrade head` once).
-  initContainers:
-    - name: wait-for-db
-      image: "docker.io/library/busybox:1.37"
-      command: ["sh", "-c", "until nc -z nemotron-db 5432; do echo 'waiting for nemotron-db'; sleep 2; done"]
-      securityContext:
-        allowPrivilegeEscalation: false
-        runAsNonRoot: true
-        runAsUser: 1000
-        capabilities:
-          drop: ["ALL"]
+  replicaCount: 1
+  # The URL is computed by VSO from the Vault secret of the application user (nemotron-db-infos).
+  env:
+    DATABASE_URL:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-db-infos"
+          key: "DATABASE_URL"
+  # No wait for the database here: the schema is created by `jobs.migration` below, and the backend
+  # retries until the CNPG Service answers.
   envCm:
     APP_ENV: "production"
     APP_DEBUG: "false"
     APP_LOG_LEVEL: "info"
     # Live transcription: the Vosk and TTS workers of this release register themselves in the backend
-    # (REGISTRY_URL is set by the chart); the token is the Secret `nemotron-registry` below.
+    # (REGISTRY_URL is set by the chart); the token is the Secret `nemotron-registry`.
     ASR_ENABLED: "true"
     ASR_STATE_STORE: "database"
   resources:
@@ -78,6 +50,8 @@ backend:
 
 vosk:
   image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "exploration/nemotron-at-scale/vosk-service"
     pullPolicy: "IfNotPresent"
   envCm:
     # The small French model is downloaded on first start (a few seconds, ~40 MB).
@@ -94,6 +68,8 @@ vosk:
 
 tts:
   image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "exploration/nemotron-at-scale/tts-service"
     pullPolicy: "IfNotPresent"
   # The image ships fr_FR-siwis-medium: nothing is downloaded at start.
   envCm:
@@ -108,107 +84,186 @@ tts:
 
 frontend:
   image:
+    registry: "harbor.sdid.cpin.numerique-interieur.com"
+    repository: "exploration/nemotron-at-scale/frontend"
     pullPolicy: "IfNotPresent"
+
+# `alembic upgrade head`: the backend image only runs uvicorn (docker-compose runs alembic itself),
+# so on Kubernetes the schema has to be created by this job. `pre-install` would run before the
+# CNPG cluster exists, so on install it runs after the resources are created (`post-install`);
+# on upgrade the cluster is already there, so it runs first (`pre-upgrade`) and the new code
+# never starts on an old schema.
+jobs:
+  migration:
+    hook:
+      enabled: true
+      types:
+        - "post-install"
+        - "pre-upgrade"
+      weight: 0
+      deletePolicy: "before-hook-creation,hook-succeeded"
+    image:
+      registry: "harbor.sdid.cpin.numerique-interieur.com"
+      repository: "exploration/nemotron-at-scale/backend"
+      pullPolicy: "IfNotPresent"
+    command: ["alembic"]
+    args: ["upgrade", "head"]
+    envFrom:
+      - secretRef:
+          name: "nemotron-db-infos"
+    serviceAccount:
+      enabled: true
+      create: true
+    # A failed migration is retried at most twice, and a stuck one is stopped after 15 minutes
+    # instead of blocking the release until the timeout.
+    backoffLimit: 2
+    activeDeadlineSeconds: 900
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      seccompProfile:
+        type: "RuntimeDefault"
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      capabilities:
+        drop: ["ALL"]
+    initContainers:
+      - name: wait-for-postgres
+        # Same image as the migration (already pulled, no dependency on docker.io). Polls the TCP
+        # port of the host alembic will really use; alembic then fails fast if PostgreSQL is not
+        # really ready.
+        image: "harbor.sdid.cpin.numerique-interieur.com/exploration/nemotron-at-scale/backend:{{ .Chart.AppVersion }}"
+        imagePullPolicy: "IfNotPresent"
+        command:
+          - "python"
+          - "-c"
+          - |-
+            import os,socket,time
+            from urllib.parse import urlsplit
+            u = urlsplit(os.environ['DATABASE_URL'])
+            print(f'Waiting for PostgreSQL at {u.hostname}:{u.port or 5432}', flush=True)
+            while True:
+                try:
+                    socket.create_connection((u.hostname, u.port or 5432), 2).close()
+                    break
+                except OSError:
+                    time.sleep(1)
+            print('PostgreSQL reachable', flush=True)
+        envFrom:
+          - secretRef:
+              name: "nemotron-db-infos"
+        securityContext:
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          seccompProfile:
+            type: "RuntimeDefault"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "256Mi"
+
+# Each secret is a Vault KV v2 secret read by VSO. The environment file gives `spec.mount` and
+# `spec.path` (dev/nemotron/<name>).
 extraObjects:
-  # Token the workers register with (backend REGISTRY_TOKEN, VOSK_/TTS_REGISTRY_TOKEN). Throwaway.
-  nemotron-registry: |
-    apiVersion: v1
-    kind: Secret
+  # Token the workers register with: key `token`.
+  nemotron-registry:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
     metadata:
       name: nemotron-registry
-    type: Opaque
-    stringData:
-      token: "local-test-token"
-  # Token of the admin interface, asked at login. Throwaway.
-  nemotron-admin: |
-    apiVersion: v1
-    kind: Secret
+    spec:
+      vaultAuthRef: vault-auth
+      type: kv-v2
+      destination:
+        name: nemotron-registry
+        create: true
+  # Token of the admin interface: key `token`.
+  nemotron-admin:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
     metadata:
       name: nemotron-admin
-    type: Opaque
-    stringData:
-      token: "local-admin-token"
-  # ---- PostgreSQL, FOR TESTS ONLY ----
-  nemotron-database: |
-    apiVersion: v1
-    kind: Secret
-    metadata:
-      name: nemotron-database
-    type: Opaque
-    stringData:
-      url: "postgresql+asyncpg://nemotron:nemotron@nemotron-db:5432/nemotron"
-  nemotron-db-service: |
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: nemotron-db
     spec:
-      selector:
-        app.kubernetes.io/name: nemotron-db
-      ports:
-        - name: postgres
-          port: 5432
-          targetPort: postgres
-  nemotron-db: |
-    apiVersion: apps/v1
-    kind: StatefulSet
+      vaultAuthRef: vault-auth
+      type: kv-v2
+      destination:
+        name: nemotron-admin
+        create: true
+  # CNPG wants kubernetes.io/basic-auth secrets (keys `username` and `password`): an Opaque one
+  # (the VSO default) makes the Cluster wait forever.
+  nemotron-db-superuser:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
     metadata:
-      name: nemotron-db
+      name: nemotron-db-superuser
     spec:
-      serviceName: nemotron-db
-      replicas: 1
-      selector:
-        matchLabels:
-          app.kubernetes.io/name: nemotron-db
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: nemotron-db
-        spec:
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 70
-            runAsGroup: 70
-            fsGroup: 70
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: postgres
-              image: "docker.io/library/postgres:16-alpine"
-              ports:
-                - name: postgres
-                  containerPort: 5432
-              env:
-                - name: POSTGRES_USER
-                  value: nemotron
-                - name: POSTGRES_PASSWORD
-                  value: nemotron
-                - name: POSTGRES_DB
-                  value: nemotron
-                # A sub-directory: the volume root is not empty on some storage classes.
-                - name: PGDATA
-                  value: /var/lib/postgresql/data/pgdata
-              readinessProbe:
-                exec:
-                  command: ["pg_isready", "-U", "nemotron"]
-                periodSeconds: 5
-              resources:
-                requests:
-                  cpu: "100m"
-                  memory: "128Mi"
-                limits:
-                  memory: "512Mi"
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop: ["ALL"]
-              volumeMounts:
-                - name: data
-                  mountPath: /var/lib/postgresql/data
-                - name: run
-                  mountPath: /var/run/postgresql
-          volumes:
-            - name: data
-              emptyDir: {}
-            - name: run
-              emptyDir: {}
+      vaultAuthRef: vault-auth
+      type: kv-v2
+      destination:
+        name: nemotron-db-superuser
+        create: true
+        type: kubernetes.io/basic-auth
+  nemotron-db-appuser:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: nemotron-db-appuser
+    spec:
+      vaultAuthRef: vault-auth
+      type: kv-v2
+      destination:
+        name: nemotron-db-appuser
+        create: true
+        type: kubernetes.io/basic-auth
+  # Same Vault secret as the application user, reshaped into the DATABASE_URL the backend reads.
+  # The host is the read-write Service of the CNPG cluster (`cnpg.fullnameOverride` + -rw). Assumes
+  # the password has no URL-reserved characters: VSO templates cannot URL-encode.
+  nemotron-db-infos:
+    apiVersion: secrets.hashicorp.com/v1beta1
+    kind: VaultStaticSecret
+    metadata:
+      name: nemotron-db-infos
+    spec:
+      vaultAuthRef: vault-auth
+      type: kv-v2
+      destination:
+        name: nemotron-db-infos
+        create: true
+        transformation:
+          excludes:
+            - ".*"
+          templates:
+            DATABASE_URL:
+              text: 'postgresql+asyncpg://{{ "{{" }} get .Secrets "username" {{ "}}" }}:{{ "{{" }} get .Secrets "password" {{ "}}" }}@nemotron-pg-cluster-rw:5432/nemotron'
+
+cnpg:
+  enabled: true
+  fullnameOverride: "nemotron-pg-cluster"
+  mode: "standalone"
+  cluster:
+    imageName: "ghcr.io/cloudnative-pg/postgresql:17.7"
+    enableSuperuserAccess: true
+    superuserSecret: "nemotron-db-superuser"
+    initdb:
+      database: "nemotron"
+      owner: "nemotron"
+      secret:
+        name: "nemotron-db-appuser"
