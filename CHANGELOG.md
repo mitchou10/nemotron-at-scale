@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1-rc](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.0...v0.5.1-rc) (2026-10-12)
+
+
+### Bug Fixes
+
+* **tts:** chmod the voices in a RUN, Kaniko cannot parse a symbolic COPY --chmod ([6801e04](https://github.com/mitchou10/nemotron-at-scale/commit/6801e04a4af0b7b9a55db9749ff36bd89d1beea7))
+
 ## [0.5.0](https://github.com/mitchou10/nemotron-at-scale/compare/v0.4.0...v0.5.0) (2026-10-12)
 
 
