@@ -93,7 +93,7 @@ async def test_registers_with_a_heartbeat_then_unregisters(registry: Registry) -
     assert first["path"] == "/api/v1/registry/instances/vosk-1"
     assert first["auth"] == "Bearer tok"
     assert first["body"] == {
-        "kind": "vosk",
+        "kind": "nemo",
         "url": "ws://asr-vosk:8080/v1/audio/transcriptions/realtime",
         "max_streams": 12,
         "priority": 2,
