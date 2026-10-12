@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/mitchou10/nemotron-at-scale/compare/v0.3.0...v0.4.0) (2026-10-12)
+
+
+### Features
+
+* **backend:** admin statistics API and TTS call log ([42af207](https://github.com/mitchou10/nemotron-at-scale/commit/42af2075c5282229683ad9f3616d688cd8aa0410))
+* **backend:** instance registry, gateway for STT and TTS ([7a58c5f](https://github.com/mitchou10/nemotron-at-scale/commit/7a58c5f90076ed1f46d5ef974550236442644c20))
+* **deploy:** wire the registry in compose and the chart, update the docs ([56ffb4d](https://github.com/mitchou10/nemotron-at-scale/commit/56ffb4d79ca29bfdd4d12bc36ff2a1164943a001))
+* **frontend:** admin interface with React, Tailwind CSS and shadcn/ui ([22e28a1](https://github.com/mitchou10/nemotron-at-scale/commit/22e28a12cd3292ad641e158d607fafd53c643a1a))
+* **helm:** add CloudNativePG cluster and Vault secrets for dev ([0a3627d](https://github.com/mitchou10/nemotron-at-scale/commit/0a3627d48e073763db31e83dadd9a3d76418b534))
+* **helm:** add common-values.yaml to try the chart as is ([5c7070f](https://github.com/mitchou10/nemotron-at-scale/commit/5c7070fa5b08b3d393df5ca6143f661719793e6d))
+* **helm:** add global ingress and the dev environment values ([cba762e](https://github.com/mitchou10/nemotron-at-scale/commit/cba762edabc553e55d2377babdc15b9d05c76e4b))
+* **vosk,tts:** register in the backend registry with a heartbeat ([bd38ccb](https://github.com/mitchou10/nemotron-at-scale/commit/bd38ccbed4161822d0ab96e0c2140b94abbe119b))
+
+
+### Bug Fixes
+
+* **frontend:** track src/lib, which the Python .gitignore rule hid ([861ce0f](https://github.com/mitchou10/nemotron-at-scale/commit/861ce0f652e2d02eab8023854cf82d44cafbf023))
+* **tts:** make the voice files readable by any uid ([2c9b930](https://github.com/mitchou10/nemotron-at-scale/commit/2c9b9303c3800b946081361e9274b5c755003ed5))
+
 ## [0.2.0-rc.3](https://github.com/mitchou10/nemotron-at-scale/compare/v0.2.0-rc.2...v0.2.0-rc.3) (2026-10-11)
 
 
