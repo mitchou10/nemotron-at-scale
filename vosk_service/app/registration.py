@@ -58,7 +58,10 @@ class Registration:
         self._interval_s = settings.registry_interval_s
         self._body = json.dumps(
             {
-                "kind": "vosk",
+                # `nemo` is the protocol this service speaks (session.update, input_audio_buffer.*).
+                # The backend's `vosk` kind is alphacep's vosk-server ({"config"}, {"eof"}): as
+                # `vosk`, the backend sent it messages it rejects and no transcript came back.
+                "kind": "nemo",
                 "url": realtime_url(announced_base_url(settings)),
                 "max_streams": settings.max_streams,
                 "priority": settings.registry_priority,
