@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/mitchou10/nemotron-at-scale/compare/v0.4.0...v0.5.0) (2026-10-12)
+
+
+### Features
+
+* **helm:** run the alembic migration as a hook job in the dev environment ([4bd7e33](https://github.com/mitchou10/nemotron-at-scale/commit/4bd7e337aecb6f422e7d919346f922ad7114fd2b))
+
+
+### Code Refactoring
+
+* **helm:** split the DSO values into a common base and a minimal dev file ([b047f6d](https://github.com/mitchou10/nemotron-at-scale/commit/b047f6db7e7d46d46077c8f4e744c0c0320831ae))
+
 ## [0.4.0](https://github.com/mitchou10/nemotron-at-scale/compare/v0.3.0...v0.4.0) (2026-10-12)
 
 
