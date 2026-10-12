@@ -20,7 +20,7 @@ global:
 backend:
   image:
     registry: "harbor.sdid.cpin.numerique-interieur.com"
-    repository: "exploration/nemotron-at-scale/backend"
+    repository: "exploration/nemotron-backend"
     pullPolicy: "IfNotPresent"
   replicaCount: 1
   # The URL is computed by VSO from the Vault secret of the application user (nemotron-db-infos).
@@ -51,7 +51,7 @@ backend:
 vosk:
   image:
     registry: "harbor.sdid.cpin.numerique-interieur.com"
-    repository: "exploration/nemotron-at-scale/vosk-service"
+    repository: "exploration/nemotron-vosk-service"
     pullPolicy: "IfNotPresent"
   envCm:
     # The small French model is downloaded on first start (a few seconds, ~40 MB).
@@ -69,7 +69,7 @@ vosk:
 tts:
   image:
     registry: "harbor.sdid.cpin.numerique-interieur.com"
-    repository: "exploration/nemotron-at-scale/tts-service"
+    repository: "exploration/nemotron-tts-service"
     pullPolicy: "IfNotPresent"
   # The image ships fr_FR-siwis-medium: nothing is downloaded at start.
   envCm:
@@ -85,26 +85,28 @@ tts:
 frontend:
   image:
     registry: "harbor.sdid.cpin.numerique-interieur.com"
-    repository: "exploration/nemotron-at-scale/frontend"
+    repository: "exploration/nemotron-frontend"
     pullPolicy: "IfNotPresent"
 
 # `alembic upgrade head`: the backend image only runs uvicorn (docker-compose runs alembic itself),
-# so on Kubernetes the schema has to be created by this job. `pre-install` would run before the
-# CNPG cluster exists, so on install it runs after the resources are created (`post-install`);
-# on upgrade the cluster is already there, so it runs first (`pre-upgrade`) and the new code
-# never starts on an old schema.
+# so on Kubernetes the schema has to be created by this job. It runs AFTER the resources are
+# applied (`post-install`, `post-upgrade`; PostSync in ArgoCD): it needs the ServiceAccount, the
+# `nemotron-db-infos` Secret and the CNPG cluster, none of which exist yet before the sync. The
+# backend health routes do not touch the database, so the release becomes healthy without the schema
+# and the hook can run. Do not use `pre-upgrade`: ArgoCD maps it to PreSync, which fails on a first
+# sync (ServiceAccount not found).
 jobs:
   migration:
     hook:
       enabled: true
       types:
         - "post-install"
-        - "pre-upgrade"
+        - "post-upgrade"
       weight: 0
       deletePolicy: "before-hook-creation,hook-succeeded"
     image:
       registry: "harbor.sdid.cpin.numerique-interieur.com"
-      repository: "exploration/nemotron-at-scale/backend"
+      repository: "exploration/nemotron-backend"
       pullPolicy: "IfNotPresent"
     command: ["alembic"]
     args: ["upgrade", "head"]
@@ -136,7 +138,7 @@ jobs:
         # Same image as the migration (already pulled, no dependency on docker.io). Polls the TCP
         # port of the host alembic will really use; alembic then fails fast if PostgreSQL is not
         # really ready.
-        image: "harbor.sdid.cpin.numerique-interieur.com/exploration/nemotron-at-scale/backend:{{ .Chart.AppVersion }}"
+        image: "harbor.sdid.cpin.numerique-interieur.com/exploration/nemotron-backend:{{ .Chart.AppVersion }}"
         imagePullPolicy: "IfNotPresent"
         command:
           - "python"

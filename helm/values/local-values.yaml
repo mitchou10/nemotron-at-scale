@@ -60,6 +60,13 @@ backend:
         runAsUser: 1000
         capabilities:
           drop: ["ALL"]
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "16Mi"
+        limits:
+          cpu: "100m"
+          memory: "32Mi"
   envCm:
     APP_ENV: "production"
     APP_DEBUG: "false"
@@ -197,6 +204,7 @@ extraObjects:
                   cpu: "100m"
                   memory: "128Mi"
                 limits:
+                  cpu: "500m"
                   memory: "512Mi"
               securityContext:
                 allowPrivilegeEscalation: false
