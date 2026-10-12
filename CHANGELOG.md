@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3-rc](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.2...v0.5.3-rc) (2026-10-12)
+
+
+### Bug Fixes
+
+* **helm:** set cpu and memory requests and limits on the CNPG cluster by default ([0623a36](https://github.com/mitchou10/nemotron-at-scale/commit/0623a366293c1a707047684ffddc5e13c6ee403f))
+
 ## [0.5.2](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.1...v0.5.2) (2026-10-12)
 
 
