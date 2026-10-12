@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.3...v0.5.4) (2026-10-12)
+
+
+### Bug Fixes
+
+* **helm:** require the registry and admin tokens, and use the realtime-stt image for the migration ([b23a8cd](https://github.com/mitchou10/nemotron-at-scale/commit/b23a8cdc74198207f9283576b23a4d8420a13764))
+
 ## [0.5.3](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.2...v0.5.3) (2026-10-12)
 
 
