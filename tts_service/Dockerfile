@@ -41,7 +41,10 @@ RUN groupadd -r appuser && useradd -r -m -g appuser appuser
 WORKDIR /app
 
 COPY --from=builder --chown=appuser:appuser /app /app
-COPY --from=voices --chown=appuser:appuser --chmod=a+rX /voices /voices
+COPY --from=voices --chown=appuser:appuser /voices /voices
+# Readable by any uid (the pod may run as another one). Not `COPY --chmod=a+rX`: Kaniko, which builds
+# the images on GitLab, only parses octal modes there.
+RUN chmod -R a+rX /voices
 
 # The same list as the build argument: these voices are loaded at start (change both together, or
 # mount a volume on /voices to download others on first start).
