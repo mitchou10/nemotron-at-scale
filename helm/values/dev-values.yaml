@@ -1,11 +1,9 @@
-# Environment "dev" on the DSO cluster (ArgoCD, Vault, CloudNativePG). Applied on top of
-# common-values.yaml:
+# Environment "dev" on the DSO cluster. Only what differs from common-values.yaml:
 #
 #   helm upgrade --install nemotron ./helm \
 #     -f helm/values/common-values.yaml -f helm/values/dev-values.yaml -n <namespace>
 #
 # With ArgoCD, list common-values.yaml in `valueFiles` and put the content of this file in `values`.
-# Same shape as the Muffin ingress: one host, /api/ to the backend and everything else to the front.
 # The Service ports of this chart are 80 (they forward to the container ports 8000 and 8080).
 #
 # NOT verified against a live dev cluster: check the Vault paths and the CNPG cluster
@@ -14,9 +12,6 @@ global:
   env:
     ENVIRONMENT: "dev"
   ingress:
-    # No className: the cluster default applies (set it, or add the annotations of the cluster,
-    # such as the allowed source ranges, here if needed).
-    className: ""
     hosts:
       - name: "nemotron-dev.example.com"
         paths:
@@ -31,213 +26,31 @@ global:
               serviceName: "nemotron-frontend"
               portNumber: 80
 
-backend:
-  # The PostgreSQL URL comes from Vault (nemotron-db-infos, computed below), not from the throwaway
-  # database of common-values.yaml.
-  env:
-    DATABASE_URL:
-      valueFrom:
-        secretKeyRef:
-          name: "nemotron-db-infos"
-          key: "DATABASE_URL"
-  # The throwaway `wait-for-db` of common-values.yaml targets `nemotron-db`, which does not exist
-  # here. The schema is created by `jobs.migration` below, and the backend retries until the CNPG
-  # Service answers.
-  initContainers: []
-
-jobs:
-  # `alembic upgrade head`: the backend image only runs uvicorn (docker-compose runs alembic itself),
-  # so on Kubernetes the schema has to be created by this job. `pre-install` would run before the
-  # CNPG cluster exists, so on install it runs after the resources are created (`post-install`);
-  # on upgrade the cluster is already there, so it runs first (`pre-upgrade`) and the new code
-  # never starts on an old schema.
-  migration:
-    hook:
-      enabled: true
-      types:
-        - "post-install"
-        - "pre-upgrade"
-      weight: 0
-      deletePolicy: "before-hook-creation,hook-succeeded"
-    image:
-      registry: "ghcr.io"
-      repository: "mitchou10/nemotron-at-scale/backend"
-      pullPolicy: "IfNotPresent"
-    command: ["alembic"]
-    args: ["upgrade", "head"]
-    envFrom:
-      - secretRef:
-          name: "nemotron-db-infos"
-    serviceAccount:
-      enabled: true
-      create: true
-    backoffLimit: 2
-    activeDeadlineSeconds: 900
-    podSecurityContext:
-      runAsNonRoot: true
-      runAsUser: 1000
-      runAsGroup: 1000
-      seccompProfile:
-        type: "RuntimeDefault"
-    securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      runAsNonRoot: true
-      runAsUser: 1000
-      capabilities:
-        drop: ["ALL"]
-    initContainers:
-      - name: wait-for-postgres
-        # Same image as the migration (no dependency on docker.io). Polls the TCP port of the host
-        # alembic will really use; alembic then fails fast if PostgreSQL is not really ready.
-        image: "ghcr.io/mitchou10/nemotron-at-scale/backend:{{ .Chart.AppVersion }}"
-        imagePullPolicy: "IfNotPresent"
-        command:
-          - "python"
-          - "-c"
-          - |-
-            import os,socket,time
-            from urllib.parse import urlsplit
-            u = urlsplit(os.environ['DATABASE_URL'])
-            print(f'Waiting for PostgreSQL at {u.hostname}:{u.port or 5432}', flush=True)
-            while True:
-                try:
-                    socket.create_connection((u.hostname, u.port or 5432), 2).close()
-                    break
-                except OSError:
-                    time.sleep(1)
-            print('PostgreSQL reachable', flush=True)
-        envFrom:
-          - secretRef:
-              name: "nemotron-db-infos"
-        securityContext:
-          runAsUser: 1000
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          seccompProfile:
-            type: "RuntimeDefault"
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "128Mi"
-          limits:
-            cpu: "100m"
-            memory: "128Mi"
-    resources:
-      requests:
-        cpu: "250m"
-        memory: "128Mi"
-      limits:
-        cpu: "500m"
-        memory: "256Mi"
-
 extraObjects:
-  # The throwaway PostgreSQL of common-values.yaml is replaced by the CNPG cluster below.
-  nemotron-database: null
-  nemotron-db-service: null
-  nemotron-db: null
-
-  # Token the workers register with: Vault KV secret with a `token` key.
   nemotron-registry:
-    apiVersion: secrets.hashicorp.com/v1beta1
-    kind: VaultStaticSecret
-    metadata:
-      name: nemotron-registry
     spec:
-      vaultAuthRef: vault-auth
       mount: exploration
       path: dev/nemotron/registry
-      type: kv-v2
-      destination:
-        name: nemotron-registry
-        create: true
-
-  # Token of the admin interface: Vault KV secret with a `token` key.
   nemotron-admin:
-    apiVersion: secrets.hashicorp.com/v1beta1
-    kind: VaultStaticSecret
-    metadata:
-      name: nemotron-admin
     spec:
-      vaultAuthRef: vault-auth
       mount: exploration
       path: dev/nemotron/admin
-      type: kv-v2
-      destination:
-        name: nemotron-admin
-        create: true
-
-  # Credentials, one Vault KV secret each (mount "exploration", path dev/nemotron/<name>).
-  # CNPG wants kubernetes.io/basic-auth secrets (username + password keys): an Opaque one makes the
-  # Cluster wait forever.
   nemotron-db-superuser:
-    apiVersion: secrets.hashicorp.com/v1beta1
-    kind: VaultStaticSecret
-    metadata:
-      name: nemotron-db-superuser
     spec:
-      vaultAuthRef: vault-auth
       mount: exploration
       path: dev/nemotron/db-superuser
-      type: kv-v2
-      destination:
-        name: nemotron-db-superuser
-        create: true
-        type: kubernetes.io/basic-auth
   nemotron-db-appuser:
-    apiVersion: secrets.hashicorp.com/v1beta1
-    kind: VaultStaticSecret
-    metadata:
-      name: nemotron-db-appuser
     spec:
-      vaultAuthRef: vault-auth
       mount: exploration
       path: dev/nemotron/db-appuser
-      type: kv-v2
-      destination:
-        name: nemotron-db-appuser
-        create: true
-        type: kubernetes.io/basic-auth
-  # Same Vault secret as the app user, reshaped into the DATABASE_URL the backend reads. The host
-  # is the read-write Service of the CNPG cluster (`cnpg.fullnameOverride` + -rw). Assumes the
-  # password has no URL-reserved characters: VSO templates cannot URL-encode.
   nemotron-db-infos:
-    apiVersion: secrets.hashicorp.com/v1beta1
-    kind: VaultStaticSecret
-    metadata:
-      name: nemotron-db-infos
     spec:
-      vaultAuthRef: vault-auth
       mount: exploration
       path: dev/nemotron/db-appuser
-      type: kv-v2
-      destination:
-        name: nemotron-db-infos
-        create: true
-        transformation:
-          excludes:
-            - ".*"
-          templates:
-            DATABASE_URL:
-              text: 'postgresql+asyncpg://{{ "{{" }} get .Secrets "username" {{ "}}" }}:{{ "{{" }} get .Secrets "password" {{ "}}" }}@nemotron-pg-cluster-rw:5432/nemotron'
 
 cnpg:
-  enabled: true
-  fullnameOverride: "nemotron-pg-cluster"
-  mode: "standalone"
   cluster:
-    imageName: "ghcr.io/cloudnative-pg/postgresql:17.7"
     instances: 1
-    enableSuperuserAccess: true
-    superuserSecret: "nemotron-db-superuser"
-    initdb:
-      database: "nemotron"
-      owner: "nemotron"
-      secret:
-        name: "nemotron-db-appuser"
     storage:
       size: "10Gi"
     walStorage:
