@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.1...v0.5.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deploy:** name the Harbor images nemotron-&lt;service&gt;, post-hook migration, cpu limits ([2a646c1](https://github.com/mitchou10/nemotron-at-scale/commit/2a646c19ec4e621999e88920bf3422c248ae7b8b))
+
 ## [0.5.1](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.0...v0.5.1) (2026-10-12)
 
 
