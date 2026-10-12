@@ -30,6 +30,20 @@ backend:
         secretKeyRef:
           name: "nemotron-db-infos"
           key: "DATABASE_URL"
+    # The tokens are not optional here: without them the registry and the admin interface would
+    # be open, so a pod must not start before VSO has created the secrets.
+    REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: false
+    ADMIN_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-admin"
+          key: "token"
+          optional: false
   # No wait for the database here: the schema is created by `jobs.migration` below, and the backend
   # retries until the CNPG Service answers.
   envCm:
@@ -53,6 +67,13 @@ vosk:
     registry: "harbor.sdid.cpin.numerique-interieur.com"
     repository: "exploration/nemotron-vosk-service"
     pullPolicy: "IfNotPresent"
+  env:
+    VOSK_REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: false
   envCm:
     # The small French model is downloaded on first start (a few seconds, ~40 MB).
     VOSK_MODEL_NAME: "vosk-model-small-fr-0.22"
@@ -72,6 +93,13 @@ tts:
     repository: "exploration/nemotron-tts-service"
     pullPolicy: "IfNotPresent"
   # The image ships fr_FR-siwis-medium: nothing is downloaded at start.
+  env:
+    TTS_REGISTRY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: "nemotron-registry"
+          key: "token"
+          optional: false
   envCm:
     TTS_VOICES: "fr_FR-siwis-medium"
   resources:
@@ -106,7 +134,7 @@ jobs:
       deletePolicy: "before-hook-creation,hook-succeeded"
     image:
       registry: "harbor.sdid.cpin.numerique-interieur.com"
-      repository: "exploration/nemotron-backend"
+      repository: "exploration/exploration-realtime-stt-backend"
       pullPolicy: "IfNotPresent"
     command: ["alembic"]
     args: ["upgrade", "head"]
