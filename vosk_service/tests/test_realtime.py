@@ -4,7 +4,7 @@ import base64
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app.config import Settings
 from app.main import create_app
@@ -217,3 +217,26 @@ def test_stream_duration_limit_is_reported_as_an_error(engine: FakeEngine) -> No
         error = ws.receive_json()
         assert error["type"] == "error"
         assert "maximum duration of 1 seconds" in error["error"]["message"]
+
+
+def test_a_client_gone_while_the_server_answers_is_not_an_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backend drops an overloaded stream: writing the next event ends the session quietly."""
+    sent = 0
+    send_json = WebSocket.send_json
+
+    async def flaky(self: WebSocket, data: object, mode: str = "text") -> None:
+        nonlocal sent
+        sent += 1
+        if sent > 1:  # `session.created` goes through, the first delta finds the client gone
+            raise WebSocketDisconnect(1006)
+        await send_json(self, data, mode)
+
+    monkeypatch.setattr(WebSocket, "send_json", flaky)
+    with client.websocket_connect(PATH) as ws:
+        ws.receive_json()
+        ws.send_bytes(CHUNK)
+
+    assert sent > 1
+    assert client.app.state.server.active_streams == 0
