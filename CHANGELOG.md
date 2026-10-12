@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.4...v0.5.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* **vosk:** register as nemo, the protocol this service speaks ([25416d2](https://github.com/mitchou10/nemotron-at-scale/commit/25416d28abc169da10fde697ce02531870047ad7))
+
 ## [0.5.4](https://github.com/mitchou10/nemotron-at-scale/compare/v0.5.3...v0.5.4) (2026-10-12)
 
 
