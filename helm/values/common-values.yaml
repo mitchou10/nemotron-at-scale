@@ -269,3 +269,13 @@ cnpg:
       owner: "nemotron"
       secret:
         name: "nemotron-db-appuser"
+    # The quota (dso-quota) refuses any container without requests and limits. CNPG also applies
+    # these to the `bootstrap-controller` and `initdb` containers of the initialisation job, so they
+    # must be here and not only in the environment file. An environment can still resize them.
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
